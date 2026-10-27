@@ -1,0 +1,40 @@
+{"id": "m01", "task": "message", "text": "Tôi đã sửa xong lỗi đăng nhập rồi, nguyên nhân là do quên kiểm tra giá trị null."}
+{"id": "m02", "task": "message", "text": "Bạn có rảnh vào tối nay không? Mình muốn nhờ bạn xem giúp đoạn code này."}
+{"id": "m03", "task": "message", "text": "Tôi không biết tại sao build lại bị lỗi, trên máy tôi vẫn chạy bình thường."}
+{"id": "m04", "task": "message", "text": "Ngày mai tôi sẽ đến muộn khoảng ba mươi phút vì phải đi khám răng."}
+{"id": "m05", "task": "message", "text": "Cảm ơn bạn nhiều nhé, nhờ bạn mà tôi kịp nộp bài trước hạn."}
+{"id": "m06", "task": "message", "text": "Server đang bị quá tải, mọi người tạm thời đừng deploy lên production nhé."}
+{"id": "m07", "task": "message", "text": "Tôi nghĩ chúng ta nên dùng Postgres thay vì MongoDB vì dữ liệu có nhiều quan hệ."}
+{"id": "m08", "task": "message", "text": "Ừ, được rồi, vậy thì để tôi làm phần frontend còn bạn làm phần API."}
+{"id": "m09", "task": "message", "text": "Tôi vừa xem lại, hóa ra lỗi nằm ở biến môi trường chứ không phải ở code."}
+{"id": "m10", "task": "message", "text": "Hôm nay tôi mệt quá, chắc tôi sẽ nghỉ sớm, mai mình bàn tiếp nhé."}
+{"id": "m11", "task": "message", "text": "Bạn đã push code lên nhánh `dev` chưa? Tôi cần pull về để test."}
+{"id": "m12", "task": "message", "text": "Không cần đâu, tôi tự làm được, nhưng mà nếu kẹt thì tôi sẽ hỏi bạn."}
+{"id": "m13", "task": "message", "text": "Người ta báo là ứng dụng bị crash khi mở trên Android 12, bạn kiểm tra giúp tôi được không?"}
+{"id": "m14", "task": "message", "text": "Tôi thấy thiết kế mới đẹp hơn hẳn, nhưng nút đăng ký hơi khó nhìn."}
+{"id": "m15", "task": "message", "text": "Ví dụ như hàm `parse_date` đang trả về sai múi giờ, cần sửa lại."}
+{"id": "m16", "task": "message", "text": "Mọi người ơi, cuộc họp chuyển sang ba giờ chiều thứ Sáu nhé."}
+{"id": "m17", "task": "message", "text": "Tôi đã thử ba cách rồi mà vẫn không được, chắc phải đọc lại tài liệu."}
+{"id": "m18", "task": "message", "text": "Bạn biết cách cấu hình CORS cho Next.js không? Tôi đang bị chặn request."}
+{"id": "m19", "task": "message", "text": "Thôi để tuần sau làm tiếp, giờ tôi phải ôn thi cuối kỳ."}
+{"id": "m20", "task": "message", "text": "Tôi vừa tìm được một thư viện khá hay để vẽ biểu đồ, để tôi gửi link sau."}
+{"id": "c01", "task": "commit", "text": "fix(auth): Sửa lỗi đăng nhập do thiếu kiểm tra giá trị null trong `get_user`."}
+{"id": "c02", "task": "commit", "text": "feat(api): Thêm endpoint `/v1/orders` để lấy danh sách đơn hàng theo trang."}
+{"id": "c03", "task": "commit", "text": "refactor: Tách logic xử lý thanh toán ra module riêng để dễ kiểm thử hơn."}
+{"id": "c04", "task": "commit", "text": "docs: Cập nhật hướng dẫn cài đặt cho Windows trong README."}
+{"id": "c05", "task": "commit", "text": "chore(deps): Nâng cấp `next` lên phiên bản 15.3 và sửa các cảnh báo liên quan."}
+{"id": "c06", "task": "commit", "text": "fix(ui): Sửa lỗi nút gửi bị vô hiệu hóa khi người dùng nhập email hợp lệ."}
+{"id": "c07", "task": "commit", "text": "perf(db): Thêm index cho cột `created_at` để tăng tốc truy vấn báo cáo."}
+{"id": "c08", "task": "commit", "text": "test: Bổ sung test cho trường hợp token hết hạn trong middleware xác thực."}
+{"id": "c09", "task": "commit", "text": "feat(cli): Thêm cờ `--dry-run` để xem trước thay đổi mà không ghi file."}
+{"id": "c10", "task": "commit", "text": "fix: Xử lý trường hợp đường dẫn có khoảng trắng trên Windows."}
+{"id": "r01", "task": "comment", "text": "Đoạn này nên tách ra thành hàm riêng vì đang bị lặp lại ở ba chỗ."}
+{"id": "r02", "task": "comment", "text": "Tôi đã kiểm tra lại và lỗi này không còn xuất hiện sau khi merge PR trước."}
+{"id": "r03", "task": "comment", "text": "Cảm ơn bạn đã review. Tôi đã sửa theo góp ý, bạn xem lại giúp tôi nhé."}
+{"id": "r04", "task": "comment", "text": "Biến `retry_count` chưa được reset sau mỗi lần gọi thành công, có thể gây lỗi."}
+{"id": "r05", "task": "comment", "text": "Tôi chưa tái hiện được lỗi này, bạn có thể cung cấp thêm log không?"}
+{"id": "r06", "task": "comment", "text": "Thay đổi này ổn, nhưng cần thêm test cho trường hợp danh sách rỗng."}
+{"id": "r07", "task": "comment", "text": "Phần này tôi nghĩ nên dùng `useMemo` để tránh render lại không cần thiết."}
+{"id": "r08", "task": "comment", "text": "Lỗi CI là do cache cũ, tôi đã xóa cache và chạy lại thì đã thành công."}
+{"id": "r09", "task": "comment", "text": "Tôi đề xuất đóng issue này vì đã được giải quyết trong phiên bản 0.4.0."}
+{"id": "r10", "task": "comment", "text": "Không nên commit file `.env` lên repo, bạn hãy thêm nó vào `.gitignore`."}

@@ -1,0 +1,25 @@
+# private data: never commit
+data/
+*.zip
+your_facebook_activity/
+package/
+facebook-*/
+# models & runs
+models/
+runs/
+*.gguf
+*.onnx
+*.onnx.data
+*.safetensors
+# env & secrets
+.env
+.env.*
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# os
+.DS_Store
+tools/
+spike/phase0/results/
