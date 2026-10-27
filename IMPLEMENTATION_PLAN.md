@@ -12,7 +12,7 @@
 - **Base model đề xuất:** `Qwen3.5-2B` (chính), `Gemma 4 E2B` (đối chứng), `Qwen3.5-0.8B` (bản nhẹ nếu CPU chậm), `Qwen3.5-4B` (nếu 2B chưa đủ giọng).
 - **4 chỗ phải sửa so với plan gốc:**
   1. Qwen3.5 **kh nên dùng QLoRA** (Unsloth khuyến cáo vì sai số quantize cao) → train **LoRA bf16**. 2B chỉ cần ~5GB VRAM nên 3060 dư sức.
-  2. **Chỉ dùng data chat (Messenger/Discord).** Commit/comment GitHub cũ đều do AI viết nên kh phải giọng m → kh dùng. Giọng commit/comment học từ chat ở tone `work`, còn format cứng (prefix, trailer, backtick) do code giữ. Eval 2 task này bằng ~30–50 mẫu m tự gõ (5.4).
+  2. **Chỉ dùng data chat (Messenger/Discord).** Commit/comment GitHub cũ đều do AI viết nên kh phải giọng m → kh dùng. Train **1 giọng duy nhất** (kh tag casual/work, owner chốt 2026-10-27). Commit/comment dùng chung giọng đó, còn format cứng (prefix, trailer, backtick) do code giữ. Eval 2 task này bằng ~30–50 mẫu m tự gõ (5.4).
   3. Rewriter phải **giữ nguyên phần "cứng"**: prefix conventional commit (`feat(x):`), trailer `Co-Authored-By`, identifier/path/code trong backtick. Cần guard kiểm tra output, fail thì trả về bản trung tính.
   4. Lọc theo thời gian **bằng số đo drift**, kh đoán: tính metric văn phong theo quý rồi mới chốt mốc cắt (mặc định Discord lấy **36 tháng** gần nhất, Messenger lấy hết vì export chỉ có ~1 năm).
 - **Rủi ro lớn nhất:** (a) model nhỏ bịa thêm hoặc làm mất ý, (b) agent quên gọi tool hoặc tự "sửa lại" output về văn chuẩn. (a) chặn bằng eval gate + guard, (b) chặn bằng mô tả tool + `CLAUDE.md` + hook (Phase 7).
@@ -127,7 +127,7 @@ fine-tune-chat/
 │   ├── interim/               # messages.parquet sau ingest
 │   └── processed/             # pairs.jsonl, splits/
 ├── configs/
-│   ├── threads.yaml           # allowlist thread + tag giọng (casual/work/...)
+│   ├── threads.yaml           # allowlist thread (include: true/false)
 │   ├── filter.yaml            # cutoff date, burst gap, min/max len
 │   └── train/*.yaml           # mỗi experiment một file
 ├── src/stylesync/
@@ -213,8 +213,8 @@ Vẽ 1 chart theo quý → chọn mốc từ chỗ các đường bắt đầu �
 Commit và comment GitHub cũ của m đều do AI viết, kh phải giọng m → **bỏ khỏi data** (cả train lẫn test).
 
 Hệ quả và cách xử lý:
-- **Train chỉ có chat.** Mọi mẫu đều là `task=message`, khác nhau ở `tone` (`casual` cho bạn bè, `work` cho thread/nhóm làm việc, lấy theo tag trong `configs/threads.yaml`).
-- **Runtime:** `rewrite_style(task=commit|comment)` map sang `tone=work`. Phần cứng (prefix `type(scope):`, trailer, backtick) do server tách ra và guard kiểm, kh trông vào model (đã có từ Phase 0).
+- **Train chỉ có chat, 1 giọng.** Mọi mẫu đều là `task=message`, kh tag tone. Data work gần như kh có (8/8,769 mẫu), và owner kh cần giọng work riêng.
+- **Runtime:** `rewrite_style(task=commit|comment)` dùng chung model/prompt với `message`. Phần cứng (prefix `type(scope):`, trailer, backtick) do server tách ra và guard kiểm, kh trông vào model (đã có từ Phase 0).
 - **Eval riêng cho commit/comment:** m tự gõ ~30–50 mẫu theo đúng giọng m muốn (vd lấy 15 commit + 15 comment trung tính trong `spike/phase0/testset.jsonl` rồi viết lại theo giọng m) → `data/eval/owner_commit_comment.jsonl`. **Chỉ dùng để eval, kh train** (ít quá, train vào thì eval vô nghĩa).
 - Nếu Phase 5 thấy giọng chat lên commit quá "chat" (dài, nhiều emoji, kh hợp commit) → mới tính tới: thêm vài trăm cặp commit/comment do m tự viết, hoặc rule hậu xử lý (bỏ emoji, giới hạn độ dài cho commit).
 
@@ -223,6 +223,14 @@ Hệ quả và cách xử lý:
 Đọc ngẫu nhiên 200 mẫu sau lọc (120 Messenger, 80 Discord). Ghi tỉ lệ mẫu "rác/kh đúng giọng" vào `reports/data.md`. Tỉ lệ > 10% → siết rule rồi lọc lại.
 
 **Deliverable:** `data/processed/mine.jsonl`, `reports/data.md` (số lượng từng bước, chart drift, kết quả review).
+
+> **Trạng thái (2026-10-27): xong.** Có 8,769 mẫu (Messenger 6,951 + Discord 1,818). Review lượt cuối: 0.5% lỗi. Chi tiết ở `reports/data.md`. Code nằm ở `src/stylesync/{ingest,clean}/`, chạy bằng `uv run stylesync-data`.
+>
+> Khác plan:
+> - interim là jsonl, kh dùng parquet;
+> - thêm lọc nhiễu, lọc tiếng Anh, lọc burst kh dấu;
+> - Discord trước 2025-04-01 có `weight = 0.5` vì emoticon cao hơn 3–9×;
+> - tone `work` gần như kh có (8 mẫu) → owner chốt **train 1 giọng**, bỏ tag tone khỏi pipeline (xem `reports/data.md` mục 4).
 
 ---
 
@@ -246,7 +254,7 @@ Hệ quả và cách xử lý:
 **Deliverable:** `data/processed/pairs.jsonl`:
 
 ```json
-{"id": "...", "task": "message", "tone": "casual|work", "source": "messenger", "ts": "2026-05-01T10:00:00Z", "input": "<bản trung tính>", "output": "<bản gốc của mình>"}
+{"id": "...", "task": "message", "source": "messenger", "ts": "2026-05-01T10:00:00Z", "input": "<bản trung tính>", "output": "<bản gốc của mình>"}
 ```
 
 ---
@@ -254,12 +262,11 @@ Hệ quả và cách xử lý:
 ## 7. Phase 3: Dataset build
 
 - **Format chat** (dùng chat template của chính base model, **non-thinking**):
-  - system: `Bạn là bộ viết lại văn phong. Tone: {tone}. Giữ nguyên ý, code, identifier. Chỉ trả về bản viết lại.` (kh có tag task vì train chỉ có message, xem 5.4)
+  - system: `Bạn là bộ viết lại văn phong. Giữ nguyên ý, code, identifier. Chỉ trả về bản viết lại.` (kh có tag task/tone vì train 1 giọng, chỉ có message, xem 5.4)
   - user: `{input}`
   - assistant: `{output}`
 - **Train on completions only** (mask loss phần system/user).
 - **Split theo thời gian và theo thread**, kh random theo mẫu: 10% mới nhất làm **test**, 10% kế tiếp làm **val**. Burst cùng 1 cuộc hội thoại rất giống nhau, split random sẽ leak và làm eval đẹp giả.
-- Cân bằng tone: nếu mẫu `work` < 15% số mẫu train thì oversample lên, vì commit/comment ở runtime đi qua tone này.
 
 ---
 
@@ -335,7 +342,7 @@ Python MCP SDK (FastMCP), transport **stdio**, là lớp mỏng gọi `llama-ser
 
 | Tool | Input | Output |
 |---|---|---|
-| `rewrite_style` | `text` (bản trung tính), `task`: `message` \| `commit` \| `comment`, `tone?`: `casual` \| `work` | `{text, guard_passed, warnings[]}` |
+| `rewrite_style` | `text` (bản trung tính), `task`: `message` \| `commit` \| `comment` | `{text, guard_passed, warnings[]}` |
 | `health` | – | model đang load, backend, latency lần gọi gần nhất |
 
 **Mô tả tool** (agent đọc cái này để biết khi nào gọi và dùng ra sao):
@@ -390,7 +397,7 @@ stylesync commit                 # đọc git diff --staged → Claude API viế
 | Agent quên gọi `rewrite_style` | Trung bình | Mô tả tool + `CLAUDE.md`, thêm hook `PreToolUse` nếu đo thấy hay quên |
 | Agent "sửa lại" output về văn chuẩn | Trung bình | Mô tả tool ghi rõ dùng verbatim, eval bằng cách so text trong commit với output tool |
 | Nhiều session load nhiều bản model | Cao nếu mỗi MCP server tự load | 1 `llama-server` dùng chung, MCP server chỉ là lớp mỏng |
-| Giọng chat ≠ giọng commit | Cao | Kh có data commit thật (đều do AI viết). Học từ chat tone `work`, format cứng do code giữ, eval bằng bộ commit/comment m tự gõ (5.4), nếu kém thì thêm data tự viết |
+| Giọng chat ≠ giọng commit | Cao | Kh có data commit thật (đều do AI viết). Dùng chung 1 giọng chat, format cứng do code giữ, eval bằng bộ commit/comment m tự gõ (5.4), nếu kém thì thêm data tự viết |
 | Văn phong drift theo năm | Trung bình | Đo drift (5.3) rồi chốt cutoff, split test theo thời gian |
 | Lộ PII / memorize tên người | Trung bình | Scrub placeholder trước neutralize và train. **Kh public adapter/model** (train từ chat riêng tư của người khác) |
 | Leak giữa train/test | Trung bình | Split theo thời gian + thread |
@@ -408,7 +415,7 @@ stylesync commit                 # đọc git diff --staged → Claude API viế
 | Runtime | GGUF + `llama-server` (Metal trên Mac), ONNX để so | Có GPU trên Mac, trưởng thành nhất, server dùng chung sẵn |
 | Cách dùng | MCP server (chính), CLI/git hook (phụ) | Claude tự viết bản trung tính, kh tốn thêm API call |
 | Neutralizer (lúc tạo data) | Claude Haiku 5.5 Batch API | Cùng họ với LLM lúc inference |
-| Thread nào học | Bạn bè + nhóm làm việc, loại thầy cô/khách/gia đình | 1 giọng thống nhất trước, tag tone sau |
+| Thread nào học | Bạn bè + nhóm làm việc, loại thầy cô/khách/gia đình | **Chốt: 1 giọng, kh tag tone** (2026-10-27) |
 | Public model | Kh | Data chứa hội thoại riêng tư |
 | Data GitHub | Kh dùng | Commit/comment cũ đều do AI viết, kh phải giọng m |
 

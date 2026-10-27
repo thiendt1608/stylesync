@@ -1,0 +1,27 @@
+# Phase 1 data pipeline settings (plan section 5). Paths are relative to the repo root.
+sources:
+  messenger:
+    root: your_facebook_activity/messages
+    cutoff: null            # export only covers 2025-2026, keep everything
+  discord:
+    root: package/Messages
+    cutoff: "2023-10-27"    # 36 months (reports/data.md, drift section)
+    # 2023Q4-2025Q1 drifts from today's voice (fewer diacritics, more emoticons and English): keep it at half weight.
+    full_weight_from: "2025-04-01"
+    old_weight: 0.5
+burst_gap_s: 120
+min_len: 20
+max_len: 400
+# Drop English-only bursts: the rewriter must answer in Vietnamese (Phase 0 failure mode).
+drop_english: true
+# Drop 6+ word bursts with no diacritics at all (old no-accent typing; the runtime guard rejects such output).
+drop_unaccented: true
+# Generated on first run, edit by hand: include: false drops a thread. Gitignored (thread titles are names).
+# One voice for everything (owner's call 2026-10-27): no casual/work tone tag.
+threads: configs/threads.yaml
+out:
+  interim: data/interim/messages.jsonl
+  bursts: data/interim/bursts.jsonl
+  processed: data/processed/mine.jsonl
+  stats: data/interim/stats.json
+  drift_svg: reports/drift.svg

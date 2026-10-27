@@ -1,0 +1,14 @@
+# Copy of the shape of configs/threads.yaml (the real file is generated and gitignored).
+# include: false drops the thread (teachers, clients, family...).
+d:123456789012345678:
+  source: discord
+  type: GUILD_TEXT
+  title: Some Team / general
+  n: 45
+  include: true
+m:0123abcd45:
+  source: messenger
+  type: DM
+  title: A Friend
+  n: 900
+  include: true

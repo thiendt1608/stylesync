@@ -1,5 +1,6 @@
 # private data: never commit
 data/
+configs/threads.yaml
 *.zip
 your_facebook_activity/
 package/
