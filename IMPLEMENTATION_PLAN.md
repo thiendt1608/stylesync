@@ -12,7 +12,7 @@
 - **Base model đề xuất:** `Qwen3.5-2B` (chính), `Gemma 4 E2B` (đối chứng), `Qwen3.5-0.8B` (bản nhẹ nếu CPU chậm), `Qwen3.5-4B` (nếu 2B chưa đủ giọng).
 - **4 chỗ phải sửa so với plan gốc:**
   1. Qwen3.5 **kh nên dùng QLoRA** (Unsloth khuyến cáo vì sai số quantize cao) → train **LoRA bf16**. 2B chỉ cần ~5GB VRAM nên 3060 dư sức.
-  2. Data chat (Messenger/Discord) **kh có giọng commit/comment GitHub** → phải thêm nguồn data thứ 3 là commit + comment GitHub của chính m, và gắn tag task.
+  2. **Chỉ dùng data chat (Messenger/Discord).** Commit/comment GitHub cũ đều do AI viết nên kh phải giọng m → kh dùng. Giọng commit/comment học từ chat ở tone `work`, còn format cứng (prefix, trailer, backtick) do code giữ. Eval 2 task này bằng ~30–50 mẫu m tự gõ (5.4).
   3. Rewriter phải **giữ nguyên phần "cứng"**: prefix conventional commit (`feat(x):`), trailer `Co-Authored-By`, identifier/path/code trong backtick. Cần guard kiểm tra output, fail thì trả về bản trung tính.
   4. Lọc theo thời gian **bằng số đo drift**, kh đoán: tính metric văn phong theo quý rồi mới chốt mốc cắt (mặc định Discord lấy **36 tháng** gần nhất, Messenger lấy hết vì export chỉ có ~1 năm).
 - **Rủi ro lớn nhất:** (a) model nhỏ bịa thêm hoặc làm mất ý, (b) agent quên gọi tool hoặc tự "sửa lại" output về văn chuẩn. (a) chặn bằng eval gate + guard, (b) chặn bằng mô tả tool + `CLAUDE.md` + hook (Phase 7).
@@ -86,8 +86,8 @@ MLX chạy GPU Mac nhanh, train LoRA được, nma chỉ có trên Mac → chỉ
 ```
                        ┌─────────────── offline (1 lần) ────────────────┐
  Messenger JSON ─┐     │                                                 │
- Discord JSON ───┼─► ingest ─► filter/burst/scrub ─► neutralize (Claude) │
- GitHub (own) ───┘     │        (local)                (batch API)       │
+ Discord JSON ───┴─► ingest ─► filter/burst/scrub ─► neutralize (Claude) │
+                       │        (local)                (batch API)       │
                        │                    │                            │
                        │                    ▼                            │
                        │          pairs.jsonl (neutral → mine)           │
@@ -131,7 +131,7 @@ fine-tune-chat/
 │   ├── filter.yaml            # cutoff date, burst gap, min/max len
 │   └── train/*.yaml           # mỗi experiment một file
 ├── src/stylesync/
-│   ├── ingest/{messenger,discord,github}.py
+│   ├── ingest/{messenger,discord}.py
 │   ├── clean/{filters,burst,pii,drift}.py
 │   ├── neutralize/{prompt,batch,validate}.py
 │   ├── train/sft.py
@@ -179,7 +179,7 @@ Mục tiêu: trả lời 3 câu trước khi đầu tư data pipeline.
 
 - **Messenger:** đọc `inbox/`, `archived_threads/`, `e2ee_cutover/` (`message_*.json`). Fix mojibake bằng `s.encode("latin1").decode("utf-8")`, bọc try/except vì kh phải chuỗi nào cũng bị. Xác định "me" tự động: participant có mặt ở nhiều thread nhất **và** là top sender. Assert cả 2 điều kiện trùng nhau. Bỏ `ai_conversations.json`.
 - **Discord:** `package/Messages/c*/{channel.json,messages.json}`. `Timestamp` dạng `YYYY-MM-DD HH:MM:SS`. Lấy `channel.type` làm `thread_type` (DM / GROUP_DM / GUILD_TEXT…).
-- **GitHub (mới, xem 5.4).**
+- **GitHub: kh dùng** (xem 5.4).
 
 ### 5.2. Lọc
 
@@ -208,17 +208,19 @@ Tính theo **quý** trên tin của mình:
 
 Vẽ 1 chart theo quý → chọn mốc từ chỗ các đường bắt đầu ổn định. Mặc định giữ 36 tháng cho Discord. Nếu quý cuối 2023 – đầu 2024 lệch hẳn so với 2025–2026 thì lùi mốc lên 2024-10-27 (~1.8k mẫu Discord) hoặc 2025-01-01 (~1.4k). Cách khác là giữ data cũ nhưng gán `sample_weight` thấp hơn để model vẫn ưu tiên giọng gần đây.
 
-### 5.4. Data GitHub (cho task `commit` / `comment`)
+### 5.4. Commit / comment: kh có data train riêng
 
-- Commit message của m: `git log --author=<email> --format=%B` trên các repo local.
-- PR/issue comment: `gh api` search theo `commenter:<username>`.
-- **Chỉ lấy text của m.** Repo client/private: scrub tên client, tên dự án, URL nội bộ trước khi đưa vào neutralize.
-- Số lượng sẽ ít (vài trăm) → oversample 2–3x khi train, và **giữ riêng 20% làm test** cho task commit.
-- Nếu commit cũ đều do AI viết (giọng kh phải của m) → bỏ, chỉ giữ commit m tự gõ. Cách lọc: commit có trailer `Co-Authored-By: Claude` coi như kh phải giọng m.
+Commit và comment GitHub cũ của m đều do AI viết, kh phải giọng m → **bỏ khỏi data** (cả train lẫn test).
+
+Hệ quả và cách xử lý:
+- **Train chỉ có chat.** Mọi mẫu đều là `task=message`, khác nhau ở `tone` (`casual` cho bạn bè, `work` cho thread/nhóm làm việc, lấy theo tag trong `configs/threads.yaml`).
+- **Runtime:** `rewrite_style(task=commit|comment)` map sang `tone=work`. Phần cứng (prefix `type(scope):`, trailer, backtick) do server tách ra và guard kiểm, kh trông vào model (đã có từ Phase 0).
+- **Eval riêng cho commit/comment:** m tự gõ ~30–50 mẫu theo đúng giọng m muốn (vd lấy 15 commit + 15 comment trung tính trong `spike/phase0/testset.jsonl` rồi viết lại theo giọng m) → `data/eval/owner_commit_comment.jsonl`. **Chỉ dùng để eval, kh train** (ít quá, train vào thì eval vô nghĩa).
+- Nếu Phase 5 thấy giọng chat lên commit quá "chat" (dài, nhiều emoji, kh hợp commit) → mới tính tới: thêm vài trăm cặp commit/comment do m tự viết, hoặc rule hậu xử lý (bỏ emoji, giới hạn độ dài cho commit).
 
 ### 5.5. Review tay
 
-Đọc ngẫu nhiên 200 mẫu sau lọc (100 Messenger, 70 Discord, 30 GitHub). Ghi tỉ lệ mẫu "rác/kh đúng giọng" vào `reports/data.md`. Tỉ lệ > 10% → siết rule rồi lọc lại.
+Đọc ngẫu nhiên 200 mẫu sau lọc (120 Messenger, 80 Discord). Ghi tỉ lệ mẫu "rác/kh đúng giọng" vào `reports/data.md`. Tỉ lệ > 10% → siết rule rồi lọc lại.
 
 **Deliverable:** `data/processed/mine.jsonl`, `reports/data.md` (số lượng từng bước, chart drift, kết quả review).
 
@@ -226,12 +228,11 @@ Vẽ 1 chart theo quý → chọn mốc từ chỗ các đường bắt đầu �
 
 ## 6. Phase 2: Neutralize (back-translation)
 
-- **Model:** Claude Haiku 5.5 (`claude-haiku-5-5`) qua **Message Batches API** (rẻ hơn, kh cần realtime). Nếu spot-check thấy Haiku hay thêm/mất ý thì đổi sang Sonnet 5.5 cho phần commit/comment. Giá: xem docs Anthropic lúc chạy, kh ghi số ở đây.
+- **Model:** Claude Haiku 5.5 (`claude-haiku-5-5`) qua **Message Batches API** (rẻ hơn, kh cần realtime). Nếu spot-check thấy Haiku hay thêm/mất ý thì đổi sang Sonnet 5.5. Giá: xem docs Anthropic lúc chạy, kh ghi số ở đây.
 - **Privacy:** chỉ gửi text đã scrub PII (5.2). API key để trong env var `ANTHROPIC_API_KEY`, kh ghi vào file trong repo.
 - **Prompt:** dùng prompt ở plan gốc mục 5, thêm:
   - "Giữ nguyên code, identifier, path, tên lệnh, nội dung trong backtick."
   - "Giữ nguyên placeholder dạng `<NAME>`."
-  - Với task `commit`: "Giữ nguyên prefix conventional commit."
   - Output JSON `{"neutral": "..."}` để parse chắc chắn.
 - **2 biến thể neutral cho mỗi mẫu** (1 trang trọng, 1 trung tính ngắn gọn). Data x2, và model kh bị overfit vào 1 kiểu câu của neutralizer.
 - **Validate tự động** (`neutralize/validate.py`), bỏ mẫu nếu:
@@ -245,7 +246,7 @@ Vẽ 1 chart theo quý → chọn mốc từ chỗ các đường bắt đầu �
 **Deliverable:** `data/processed/pairs.jsonl`:
 
 ```json
-{"id": "...", "task": "message|commit|comment", "tone": "casual|work", "source": "messenger", "ts": "2026-05-01T10:00:00Z", "input": "<bản trung tính>", "output": "<bản gốc của mình>"}
+{"id": "...", "task": "message", "tone": "casual|work", "source": "messenger", "ts": "2026-05-01T10:00:00Z", "input": "<bản trung tính>", "output": "<bản gốc của mình>"}
 ```
 
 ---
@@ -253,12 +254,12 @@ Vẽ 1 chart theo quý → chọn mốc từ chỗ các đường bắt đầu �
 ## 7. Phase 3: Dataset build
 
 - **Format chat** (dùng chat template của chính base model, **non-thinking**):
-  - system: `Bạn là bộ viết lại văn phong. Task: {task}. Tone: {tone}. Giữ nguyên ý, code, identifier. Chỉ trả về bản viết lại.`
+  - system: `Bạn là bộ viết lại văn phong. Tone: {tone}. Giữ nguyên ý, code, identifier. Chỉ trả về bản viết lại.` (kh có tag task vì train chỉ có message, xem 5.4)
   - user: `{input}`
   - assistant: `{output}`
 - **Train on completions only** (mask loss phần system/user).
 - **Split theo thời gian và theo thread**, kh random theo mẫu: 10% mới nhất làm **test**, 10% kế tiếp làm **val**. Burst cùng 1 cuộc hội thoại rất giống nhau, split random sẽ leak và làm eval đẹp giả.
-- Cân bằng task: message chiếm đa số, commit/comment oversample sao cho mỗi task ≥ 15% số mẫu train.
+- Cân bằng tone: nếu mẫu `work` < 15% số mẫu train thì oversample lên, vì commit/comment ở runtime đi qua tone này.
 
 ---
 
@@ -290,6 +291,8 @@ Vẽ 1 chart theo quý → chọn mốc từ chỗ các đường bắt đầu �
 ## 9. Phase 5: Eval (gate trước khi làm MCP server)
 
 Chạy trên **test set** (kh đụng lúc train), cho 4 hệ thống: Baseline A (base model zero-shot), Baseline B (Claude + 10 few-shot retrieve từ tin thật của m theo similarity), model fine-tune, và bản trung tính (đối chứng sàn).
+
+Task commit/comment kh có trong test set chat → chạy thêm trên `data/eval/owner_commit_comment.jsonl` (bộ m tự gõ, 5.4) với cùng các metric, báo số riêng.
 
 | Metric | Cách đo | Ngưỡng gợi ý |
 |---|---|---|
@@ -387,7 +390,7 @@ stylesync commit                 # đọc git diff --staged → Claude API viế
 | Agent quên gọi `rewrite_style` | Trung bình | Mô tả tool + `CLAUDE.md`, thêm hook `PreToolUse` nếu đo thấy hay quên |
 | Agent "sửa lại" output về văn chuẩn | Trung bình | Mô tả tool ghi rõ dùng verbatim, eval bằng cách so text trong commit với output tool |
 | Nhiều session load nhiều bản model | Cao nếu mỗi MCP server tự load | 1 `llama-server` dùng chung, MCP server chỉ là lớp mỏng |
-| Giọng chat ≠ giọng commit | Cao | Data GitHub riêng + tag task + test set riêng cho commit |
+| Giọng chat ≠ giọng commit | Cao | Kh có data commit thật (đều do AI viết). Học từ chat tone `work`, format cứng do code giữ, eval bằng bộ commit/comment m tự gõ (5.4), nếu kém thì thêm data tự viết |
 | Văn phong drift theo năm | Trung bình | Đo drift (5.3) rồi chốt cutoff, split test theo thời gian |
 | Lộ PII / memorize tên người | Trung bình | Scrub placeholder trước neutralize và train. **Kh public adapter/model** (train từ chat riêng tư của người khác) |
 | Leak giữa train/test | Trung bình | Split theo thời gian + thread |
@@ -407,6 +410,7 @@ stylesync commit                 # đọc git diff --staged → Claude API viế
 | Neutralizer (lúc tạo data) | Claude Haiku 5.5 Batch API | Cùng họ với LLM lúc inference |
 | Thread nào học | Bạn bè + nhóm làm việc, loại thầy cô/khách/gia đình | 1 giọng thống nhất trước, tag tone sau |
 | Public model | Kh | Data chứa hội thoại riêng tư |
+| Data GitHub | Kh dùng | Commit/comment cũ đều do AI viết, kh phải giọng m |
 
 ---
 
