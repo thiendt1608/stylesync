@@ -8,7 +8,8 @@ Ngày đo: 2026-10-27. Script: `spike/phase0/` (bench_gguf.py, bench_onnx.py, mc
 - **Runtime:** GGUF Q4_K_M + `llama-server` (Metal trên Mac). ONNX chạy được với Qwen3.5 nhưng phải dùng 2 workaround và kh nhanh hơn llama.cpp CPU khi tính end-to-end.
 - **Gate:** latency đạt cho mọi model. **RAM: Gemma 4 E2B vượt ngưỡng 3GB** (3.3GB trên Metal, 4.8GB trên CPU). **Lỗi ngôn ngữ: kh model nào đạt 0** (zero-shot). Owner quyết: nới ngưỡng RAM cho Gemma, hoặc ưu tiên Qwen3.5-2B.
 - **Rủi ro lớn nhất:** model nhỏ **đảo nghĩa** (vd chèn "kh"/"ko" thành phủ định, biến câu hỏi thành câu khẳng định). Guard hiện tại kh bắt được loại lỗi này → Phase 2 bắt buộc có eval giữ nghĩa (LLM judge) trước khi bật dùng thật.
-- **Chưa verify:** x64 CPU, agent Claude Code gọi tool thật (OAuth của `claude -p` hết hạn), ONNX cho Gemma 4 E2B và Qwen3-1.7B.
+- **Agent test (Claude Code headless, Sonnet 5.5):** nếu chỉ dựa vào docstring thì Claude **kh gọi tool** (0/3), vì MCP tool bị deferred và Claude kh thấy docstring lúc quyết định. Thêm 1 dòng luật kiểu CLAUDE.md thì gọi 3/3 và dùng nguyên văn. → Phase 4 bắt buộc phải có luật trong CLAUDE.md (hoặc skill/hook), kh trông vào docstring được.
+- **Chưa verify:** x64 CPU, ONNX cho Gemma 4 E2B và Qwen3-1.7B.
 
 ## 1. Môi trường
 
@@ -85,10 +86,18 @@ Lỗi đo trong lúc làm: bản prompt đầu có ví dụ `` `fix(auth):` `` �
 ## 5. MCP
 
 - `src/stylesync/mcp_server.py` (mcp SDK 2.x, `MCPServer`): tool `rewrite_style(text, task)` + `health()`. Với commit: tách prefix conventional và trailer (`Co-Authored-By:`…), chỉ rewrite phần thân rồi ghép lại.
-- Guard: rỗng, mất code span, **thêm code span lạ**, **mất tiếng Việt** (output ≥6 từ mà kh có dấu), lộ placeholder, tỉ lệ độ dài 0.3–2.5. Fail thì trả lại bản trung tính kèm `guard_passed: false`. Unit test: 8 pass (`pytest -q`).
+- Guard: rỗng, mất code span, **thêm code span lạ** (bọc backtick quanh chữ đã có sẵn trong nguồn thì vẫn cho qua), **mất tiếng Việt** (output ≥6 từ mà kh có dấu), lộ placeholder, tỉ lệ độ dài 0.3–2.5. Fail thì trả lại bản trung tính kèm `guard_passed: false`. Unit test: 9 pass (`pytest -q`).
 - `mcp_smoke.py` (stdio client thật): list tools ok, health ok. Prefix và trailer được giữ nguyên. Backend Gemma cho ra `` fix(auth): `commit`: Fix login bug… ``, guard bản cũ cho qua → đã thêm 2 check "thêm code span lạ" và "mất tiếng Việt", câu này giờ bị chặn.
 - Chạy lại guard trên output Metal: chặn Gemma 3/40, Qwen3.5-2B 14/40, Qwen3.5-0.8B 8/40, Qwen3-1.7B 8/40. **Guard kh bắt được đảo nghĩa** (vd "nên tách" → "ko nên tách" vẫn qua).
-- **Agent test (Claude Code tự gọi tool + dùng verbatim): not verified.** `claude -p --mcp-config … --strict-mcp-config` lỗi `OAuth session expired and could not be refreshed`. Owner cần login lại Claude Code rồi chạy lại (lệnh ở mục 7).
+- **Agent test** (2026-10-27, `claude -p` headless, model mặc định Sonnet 5.5, backend Gemma 4 E2B Metal, `--strict-mcp-config`, chỉ cho phép `mcp__stylesync__rewrite_style`). 3 prompt (commit, comment PR, tin nhắn team), kh prompt nào nhắc tới tool:
+
+  | Lượt | Cấu hình | Gọi tool | Kết quả |
+  |---|---|---|---|
+  | 1 | Chỉ có docstring | 0/3 | MCP connected và tool có trong danh sách, nma tool bị **deferred** (phải ToolSearch mới load schema) nên Claude kh thấy docstring, tự viết luôn. |
+  | 2 | Thêm 1 dòng luật qua `--append-system-prompt` (giả lập CLAUDE.md) | 3/3 | Tin nhắn: dùng nguyên văn ✅. Commit + comment: guard **bắt nhầm** vì model bọc `get_user`/`parse_date` trong backtick → Claude dùng bản trung tính và báo owner, đúng như luật. |
+  | 3 | Như lượt 2, sau khi sửa guard (bọc backtick quanh chữ đã có trong nguồn thì cho qua) | 2/2 (commit, comment) | Comment: trùng nguyên văn ✅. Commit: phần thân trùng nguyên văn, Claude gắn thêm trailer `Co-Authored-By` ở cuối (theo quy ước của Claude Code, chấp nhận được). |
+
+  Kết luận: luồng MCP → llama-server → guard → agent dùng nguyên văn đã chạy được. **Nhưng phải có luật trong CLAUDE.md** (hoặc skill/hook), chỉ có docstring là kh đủ. Mẫu câu luật đã dùng: "trước khi đưa ra commit message, comment PR/issue hoặc tin nhắn thay mặt owner, viết bản trung tính rồi gọi tool mcp__stylesync__rewrite_style (task = commit|comment|message) và dùng NGUYÊN VĂN field text trả về, không sửa gì. Nếu guard_passed=false thì dùng bản trung tính và báo owner." Cỡ mẫu nhỏ (3 prompt, 1 model), chưa thử Opus/Haiku.
 
 ## 6. Gate
 
@@ -109,10 +118,11 @@ Không model nào qua hết gate ở trạng thái zero-shot. Cái này đã đo
 ## 7. Việc còn lại / cách chạy lại
 
 - x64 CPU: chạy `bench_gguf.py … cpu` trên một máy x64 hoặc GitHub Actions ubuntu runner (repo chưa có remote, chưa làm).
-- Agent test, sau khi owner login lại:
+- Chạy lại agent test:
   ```bash
   llama-server -m models/gguf/gemma-4-E2B-it-Q4_K_M.gguf --port 18080 -c 2048 --reasoning off -np 1 -ngl 99
-  claude -p "Viết commit message conventional cho thay đổi: thêm kiểm tra None trong get_user. Không chạy git." --mcp-config mcp.json --strict-mcp-config --allowedTools mcp__stylesync__rewrite_style --output-format stream-json --verbose --max-turns 4
+  claude -p "<prompt>" --append-system-prompt "<luật ở mục 5>" --mcp-config mcp.json --strict-mcp-config --allowedTools mcp__stylesync__rewrite_style --output-format stream-json --verbose --max-turns 4
   ```
-  với `mcp.json` = `{"mcpServers":{"stylesync":{"command":"<repo>/.venv/bin/python","args":["-m","stylesync.mcp_server"]}}}`. Cần kiểm: có `tool_use` gọi `rewrite_style` kh, và commit cuối có trùng 100% với `text` trả về kh.
+  với `mcp.json` = `{"mcpServers":{"stylesync":{"command":"<repo>/.venv/bin/python","args":["-m","stylesync.mcp_server"]}}}`. Cần kiểm: có `tool_use` gọi `rewrite_style` kh, và output cuối có trùng nguyên văn với `text` trả về kh.
+- Agent test với Opus/Haiku và cỡ mẫu lớn hơn: chưa làm.
 - Đa nền tảng: chỉ đo trên macOS arm64. **not verified: Windows, Linux.**

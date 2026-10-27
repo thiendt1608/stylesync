@@ -26,6 +26,10 @@ def test_guard_rejects_added_code_span():
     assert "added code span `commit`" in guard("Sửa lỗi null trong `get_user`.", "`commit`: sửa null trong `get_user`")
 
 
+def test_guard_allows_quoting_existing_identifier():
+    assert guard("Hàm parse_date đang trả về sai múi giờ.", "hàm `parse_date` trả sai múi giờ nha") == []
+
+
 def test_guard_rejects_switch_to_english():
     assert "Vietnamese lost (no diacritics in output)" in guard(
         "Sửa lỗi đăng nhập do thiếu kiểm tra null.", "fix login bug, missing null check")

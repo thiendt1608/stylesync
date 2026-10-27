@@ -45,7 +45,7 @@ def guard(source: str, output: str) -> list[str]:
         if token not in output:
             problems.append(f"lost code span {token}")
     for token in re.findall(r"`[^`]+`", output):
-        if token not in spans:
+        if token not in spans and token.strip("`") not in source:  # quoting an existing word is fine
             problems.append(f"added code span {token}")
     # A long output without a single Vietnamese diacritic means the model switched to English;
     # short casual replies ("fix `x` r nha") legitimately have none.
