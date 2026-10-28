@@ -236,20 +236,22 @@ Hệ quả và cách xử lý:
 
 ## 6. Phase 2: Neutralize (back-translation)
 
-- **Model:** Claude Haiku 5.5 (`claude-haiku-5-5`) qua **Message Batches API** (rẻ hơn, kh cần realtime). Nếu spot-check thấy Haiku hay thêm/mất ý thì đổi sang Sonnet 5.5. Giá: xem docs Anthropic lúc chạy, kh ghi số ở đây.
-- **Privacy:** chỉ gửi text đã scrub PII (5.2). API key để trong env var `ANTHROPIC_API_KEY`, kh ghi vào file trong repo.
-- **Prompt:** dùng prompt ở plan gốc mục 5, thêm:
-  - "Giữ nguyên code, identifier, path, tên lệnh, nội dung trong backtick."
-  - "Giữ nguyên placeholder dạng `<NAME>`."
-  - Output JSON `{"neutral": "..."}` để parse chắc chắn.
+- **Model:** OpenAI **gpt-6-luna** qua **Batch API** (`/v1/responses`, cửa sổ 24h), `reasoning.effort: low`. Owner đổi từ Claude Haiku 5.5 vì có sẵn credit OpenAI. Giá Batch lúc chạy: $0.05 input / $0.25 output mỗi 1M token ([pricing](https://developers.openai.com/api/docs/pricing), xem 2026-10-27); con số này nằm trong `configs/neutralize.yaml` và `stats.json` tính tiền thật từ usage.
+- **Privacy:** chỉ gửi text đã scrub PII (5.2). Request để `store: false`; file input/output của batch bị xoá trên OpenAI sau khi collect ([data handling](https://developers.openai.com/api/docs/guides/your-data)). Key ở env var `OPENAI_API_KEY` (macOS: Keychain + `~/.zshrc`), kh ghi vào file trong repo.
+- **Lệnh:** `uv run stylesync-neutralize run [--pilot]` (= submit + collect + build), `review --n 100` ra phiếu spot-check `data/neutral/review.md`.
+- **Prompt** (`neutralize/prompt.py`, `prompt_version` nằm trong cache key):
+  - Giữ nguyên code, identifier, path, tên lệnh, nội dung trong backtick, mọi con số, placeholder `<NAME>`...
+  - Output JSON theo schema strict `{"formal": "...", "concise": "..."}`.
+  - **v2** (sau spot-check v1: 7/100 cặp lệch nghĩa, chỉ ~45% từ tiếng Anh trong bản gốc còn giữ): thuật ngữ IT/công việc giữ tiếng Anh (push code, deploy, review...) vì lúc inference Claude cũng viết vậy; lóng thì viết lại đúng nghĩa, kh chắc thì giữ nguyên từ; t/m → tôi/bạn nhưng a/e/c giữ là anh/em/chị; kh tự thêm chủ ngữ, kh thêm câu hỏi đuôi; câu cảm thán kh thành mệnh lệnh; viết lại từng dòng, kh gộp dòng rời rạc. Test bắt mọi ví dụ trong prompt phải qua validator.
 - **2 biến thể neutral cho mỗi mẫu** (1 trang trọng, 1 trung tính ngắn gọn). Data x2, và model kh bị overfit vào 1 kiểu câu của neutralizer.
 - **Validate tự động** (`neutralize/validate.py`), bỏ mẫu nếu:
-  - neutral == gốc (sau chuẩn hoá),
+  - neutral rỗng hoặc == gốc (sau chuẩn hoá),
   - tỉ lệ độ dài neutral/gốc ngoài [0.5, 3],
-  - mất token "cứng" (code, số, placeholder) so với gốc,
-  - còn viết tắt trong danh sách 5.3.
-- **Spot-check tay 100 cặp.** Nếu > 5% cặp bị thêm/mất ý → sửa prompt rồi chạy lại.
-- Cache theo hash text để chạy lại kh tốn tiền.
+  - mất token "cứng" (code, số, placeholder) so với gốc; số 0–10 viết thành chữ ("2 cái" → "hai cái") vẫn tính là giữ,
+  - còn viết tắt trong danh sách 5.3, còn emoticon, hoặc mất dấu tiếng Việt,
+  - model từ chối hoặc bị cắt vì hết token.
+- **Spot-check tay 100 cặp.** Nếu > 5% cặp bị thêm/mất ý → sửa prompt, tăng `prompt_version`, pilot lại.
+- Cache theo hash (model, prompt_version, text) để chạy lại kh tốn tiền; batch hết hạn thì lần submit sau gửi lại phần còn thiếu.
 
 **Deliverable:** `data/processed/pairs.jsonl`:
 
@@ -414,7 +416,7 @@ stylesync commit                 # đọc git diff --staged → Claude API viế
 | Base model | Qwen3.5-2B, đối chứng Gemma 4 E2B | Xem 1.2 |
 | Runtime | GGUF + `llama-server` (Metal trên Mac), ONNX để so | Có GPU trên Mac, trưởng thành nhất, server dùng chung sẵn |
 | Cách dùng | MCP server (chính), CLI/git hook (phụ) | Claude tự viết bản trung tính, kh tốn thêm API call |
-| Neutralizer (lúc tạo data) | Claude Haiku 5.5 Batch API | Cùng họ với LLM lúc inference |
+| Neutralizer (lúc tạo data) | OpenAI gpt-6-luna Batch API | Owner có sẵn credit OpenAI; full ~8.8k burst dự phóng < $1 |
 | Thread nào học | Bạn bè + nhóm làm việc, loại thầy cô/khách/gia đình | **Chốt: 1 giọng, kh tag tone** (2026-10-27) |
 | Public model | Kh | Data chứa hội thoại riêng tư |
 | Data GitHub | Kh dùng | Commit/comment cũ đều do AI viết, kh phải giọng m |

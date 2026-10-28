@@ -15,8 +15,17 @@
   - applies per-source cutoffs and sample weights;
   - writes `data/processed/mine.jsonl` (8,769 samples).
 - Phase 1 report (`reports/data.md`, `reports/drift.svg`): counts per step, per-quarter style drift, and three rounds of manual review (final error rate 0.5%).
+- Phase 2 neutralize (`uv run stylesync-neutralize`, `src/stylesync/neutralize/`):
+  - back-translates each burst into a formal and a concise neutral variant with the OpenAI Batch API (gpt-6-luna);
+  - caches results by model, prompt version and text, and resumes after a restart or an expired batch;
+  - deletes batch files on OpenAI after collecting;
+  - validates pairs, writes `data/processed/pairs.jsonl`, and computes real cost from token usage;
+  - writes a 100-pair spot-check sheet.
+- Phase 2 report (`reports/neutralize.md`): pilot v1 vs v2, full run 17,038 pairs from 8,769 bursts, real cost $1.06.
 
 ### Changed
+- Phase 2 provider: OpenAI gpt-6-luna Batch instead of Claude Haiku 5.5 Batch.
+- Neutralize prompt v2: keeps IT terms in English ("push code", not "đẩy mã nguồn"), keeps anh/em/chị pronouns, rewrites slang only when its meaning is clear, and adds no subject, question tag or connective the original lacks.
 - Plan: GitHub commits/comments dropped as a data source (they were AI-written). Training uses chat data only; commit/comment rewrites are evaluated on a small owner-written set.
 - Train a single voice: no casual/work tone tag in the data pipeline, dataset or `rewrite_style` (work-style data was 8 of 8,769 samples). `configs/threads.yaml` keeps only `include`.
 

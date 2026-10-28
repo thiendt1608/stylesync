@@ -1,0 +1,25 @@
+# Phase 2 neutralize settings (plan section 6). Paths are relative to the repo root.
+# OpenAI Batch API, /v1/responses endpoint. Key comes from OPENAI_API_KEY.
+model: gpt-6-luna
+effort: low                 # reasoning.effort; reasoning tokens are billed as output
+max_output_tokens: 4096     # includes reasoning tokens
+# Bump when the prompt changes: it is part of the cache key, so old results are not reused.
+prompt_version: v2
+pilot:
+  seed: 7
+  n: {messenger: 120, discord: 80}
+poll_s: 300                 # batches take hours; a status check every 5 min is enough
+validate:
+  len_ratio: [0.5, 3.0]     # neutral length / original length
+# USD per 1M tokens, gpt-6-luna Batch rates, https://developers.openai.com/api/docs/pricing (2026-10-27).
+price:
+  input: 0.05
+  cached_input: 0.005
+  output: 0.25
+in: data/processed/mine.jsonl
+out:
+  cache: data/neutral/cache.jsonl        # one line per API result, keyed by hash(model, prompt_version, text)
+  batches: data/neutral/batches.jsonl    # submitted batch ids, so collect can resume after a restart
+  pairs: data/processed/pairs.jsonl
+  rejects: data/neutral/rejects.jsonl
+  stats: data/neutral/stats.json
