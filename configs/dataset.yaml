@@ -1,0 +1,12 @@
+# Phase 3 dataset settings (plan section 7). Paths are relative to the repo root.
+# Split by time per source: the newest test_frac of each source's bursts is test, the next val_frac is val.
+val_frac: 0.1
+test_frac: 0.1
+# Bursts this close before a split boundary are dropped, so one conversation does not sit on both sides.
+embargo_h: 24
+# Train only: a burst keeps round(weight * 2) of its 2 neutral variants (weight 0.5 -> 1 variant).
+seed: 7
+in: data/processed/pairs.jsonl
+out:
+  dir: data/processed/splits   # train.jsonl, val.jsonl, test.jsonl
+  stats: data/processed/splits/stats.json

@@ -268,7 +268,9 @@ Hệ quả và cách xử lý:
   - user: `{input}`
   - assistant: `{output}`
 - **Train on completions only** (mask loss phần system/user).
-- **Split theo thời gian và theo thread**, kh random theo mẫu: 10% mới nhất làm **test**, 10% kế tiếp làm **val**. Burst cùng 1 cuộc hội thoại rất giống nhau, split random sẽ leak và làm eval đẹp giả.
+- **Split theo thời gian, riêng từng nguồn**, kh random theo mẫu: 10% burst mới nhất của mỗi nguồn làm **test**, 10% kế tiếp làm **val**. Burst cùng 1 cuộc hội thoại rất giống nhau, split random sẽ leak và làm eval đẹp giả. Thêm **embargo 24h** trước mỗi ranh giới; 2 variant của 1 burst luôn cùng split.
+- **Sample weight** (Discord cũ 0.5) làm bằng số variant giữ lại trong train: weight 0.5 → 1/2 variant. Kh cần trainer hỗ trợ weight.
+- **Lệnh:** `uv run stylesync-dataset` → `data/processed/splits/{train,val,test}.jsonl` (TRL prompt-completion), `stats.json`. Kết quả: `reports/dataset.md` (train 12,707 / val 1,649 / test 1,708; max ~390 token < 512).
 
 ---
 
