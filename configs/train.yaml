@@ -1,0 +1,30 @@
+# Phase 4 LoRA SFT settings (plan section 8). Paths are relative to the repo root.
+# Runs on the RTX 3060 (WSL2 Ubuntu) or Colab, never on the laptop.
+data_dir: data/processed/splits   # train.jsonl, val.jsonl from Phase 3
+runs_dir: runs                    # runs/<exp>/: checkpoints, adapter/, log.jsonl, metrics.json
+seed: 7
+max_seq_len: 512                  # longest example is ~390 tokens (reports/dataset.md)
+lora: {r: 16, alpha: 16, dropout: 0.0}
+train:
+  lr: 2.0e-4
+  scheduler: cosine
+  warmup_ratio: 0.03
+  epochs: 2
+  batch_size: 8
+  grad_accum: 2                   # effective batch 16
+  eval_steps: 100                 # also the checkpoint interval, so the best eval step can be restored
+  logging_steps: 10
+  save_total_limit: 3
+  early_stop_patience: 2          # stop after 2 evals in a row without a lower val loss
+models:
+  qwen35-2b: Qwen/Qwen3.5-2B
+  gemma4-e2b: google/gemma-4-E2B-it
+# Models trained with Unsloth's torch.compile off. Gemma 4 E2B fails its first backward with it on
+# (checkpoint recompute picks another compiled graph, pytorch/pytorch#166926).
+no_compile: [gemma4-e2b]
+# Each experiment picks a model and overrides `train` / `lora` keys. Minimum matrix from the plan: 2 models x {1, 2} epochs.
+experiments:
+  qwen35-2b-r16-e1: {model: qwen35-2b, train: {epochs: 1}}
+  qwen35-2b-r16-e2: {model: qwen35-2b}
+  gemma4-e2b-r16-e1: {model: gemma4-e2b, train: {epochs: 1}}
+  gemma4-e2b-r16-e2: {model: gemma4-e2b}

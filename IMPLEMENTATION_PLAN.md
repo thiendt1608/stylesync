@@ -297,6 +297,28 @@ Hệ quả và cách xử lý:
 
 **Deliverable:** adapter `runs/<exp>/adapter/`, `runs/<exp>/metrics.json`.
 
+**Đã làm (2026-10-29):**
+- **Máy train:** desktop RTX 3060 12GB, Windows 11 + WSL2 Ubuntu 24.04 (distro nằm ở ổ E). Từ laptop vào qua Tailscale + OpenSSH (`ssh pc`), job chạy trong `tmux` nên tắt laptop kh sao.
+  - WSL tắt distro khi kh còn `wsl.exe` nào mở, kéo theo tmux. Scheduled task `wsl-keepalive` trên Windows (chạy lúc khởi động, S4U, `wsl.exe -d Ubuntu-24.04 --exec sleep infinity`) giữ distro sống. Gỡ: `Unregister-ScheduledTask wsl-keepalive`.
+- **Smoke test (20 step, 400 example):** pass. Loss 2.46 → 1.70, val loss 2.17 → 2.05, adapter + checkpoint + metrics.json ghi đủ. VRAM khoảng 5.4 GB ở batch 8 × grad accum 2.
+- **Run `qwen35-2b-r16-e1`:** 795 step (1 epoch) trong 19.9 phút, kh early stop. Val loss 1.369 (step 100) → 1.089 (step 795), best ở step cuối và vẫn còn giảm → đáng chạy `qwen35-2b-r16-e2`.
+- **Run `qwen35-2b-r16-e2`:** early stop ở step 1000/1590 (23.4 phút). Best val loss 1.085 ở step 800 (khoảng hết epoch 1), sang epoch 2 tăng lại 1.111 → 1.114, tức bắt đầu overfit. Chỉ hơn e1 0.004 → 1 epoch là đủ, chọn adapter nào để Phase 5 quyết theo eval thật.
+- **Gemma 4 E2B:** kh gated, chỉ cần `hf auth login` (`~/stylesync/.venv/bin/hf`). Có 2 chỗ phải sửa mới chạy được:
+  - Unsloth tự đổi repo sang `unsloth/gemma-4-E2B-it` → load với `use_exact_model_name=True`.
+  - torch.compile của Unsloth làm backward đầu tiên lỗi (checkpoint recompute lệch graph, pytorch/pytorch#166926) → `no_compile: [gemma4-e2b]` trong config.
+- **Run `gemma4-e2b-r16-e1`:** 795 step trong 31.3 phút, kh early stop. Val loss 1.164 (step 100) → 0.941 (step 795), best ở step cuối. Kh so thẳng được với val loss của Qwen vì 2 model khác tokenizer; so ở Phase 5. Chưa chạy `gemma4-e2b-r16-e2`.
+- **Phase 6 cần để ý:** Unsloth báo template Gemma tạo double BOS và tự bỏ 1 cái lúc train. Parity test GGUF phải kiểm BOS.
+- **Môi trường:** dependency group `train` chỉ cài trên Linux (`uv sync --group train`). Đã pin unsloth 2026.10.10, kéo theo torch 2.14.1 (CUDA 13.0), transformers 5.17.0, trl 1.15.0, peft 0.21.2.
+- **Lệnh:**
+  - `uv run --group train stylesync-train --exp qwen35-2b-r16-e1`
+  - Thêm `--resume` để chạy tiếp từ checkpoint.
+  - Thêm `--max-steps 20 --limit 400` để smoke test.
+  - Experiment khai báo trong `configs/train.yaml`.
+- **Format:** mỗi example được render bằng chat template của base model, non-thinking (`enable_thinking=False`), giống hệt cái MCP server gửi cho llama-server. Trainer nhận cặp prompt-completion dạng text và chỉ tính loss trên completion.
+  - Qwen3.5: prompt kết thúc bằng `<|im_start|>assistant\n<think>\n\n</think>\n\n`, completion kết thúc bằng `<|im_end|>`.
+  - Template prefix-stable trên cả 14,356 example train+val. Dài nhất 478 token (đã tính template), vẫn dưới 512.
+- **Chọn best:** eval val mỗi 100 step, giữ checkpoint có val loss thấp nhất, early stop khi 2 lần eval liên tiếp kh tốt hơn.
+
 ---
 
 ## 9. Phase 5: Eval (gate trước khi làm MCP server)

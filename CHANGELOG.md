@@ -26,6 +26,12 @@
   - applies sample weights as kept variants;
   - writes TRL prompt-completion files to `data/processed/splits/` with a leak check.
 - Phase 3 report (`reports/dataset.md`): train 12,707 / val 1,649 / test 1,708 examples; the longest is about 390 tokens.
+- Phase 4 training (`uv run stylesync-train --exp <name>`, `src/stylesync/train/`, `configs/train.yaml`):
+  - LoRA bf16 SFT with Unsloth + TRL on a CUDA GPU, experiments defined in the config;
+  - renders each example with the base model's chat template (non-thinking, as the MCP server sends it) and trains on the completion only;
+  - evaluates on val, keeps the best checkpoint, stops early, resumes with `--resume`;
+  - loads the exact model repo from the config, and turns off Unsloth's torch.compile per model (`no_compile`, needed for Gemma 4 E2B);
+  - writes `runs/<exp>/adapter/`, `log.jsonl` and `metrics.json`.
 - Phase 2 report (`reports/neutralize.md`): pilot v1 vs v2, full run 17,038 pairs from 8,769 bursts, real cost $1.06.
 
 ### Changed

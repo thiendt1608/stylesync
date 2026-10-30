@@ -18,12 +18,18 @@ spike = [
 dev = [
     "pytest>=8",
 ]
+# Phase 4 training: CUDA GPU on Linux/WSL2 only (3060 or Colab). `uv sync --group train` there.
+train = [
+    "unsloth==2026.10.10 ; sys_platform == 'linux'",
+    "unsloth_zoo==2026.10.10 ; sys_platform == 'linux'",
+]
 
 [project.scripts]
 stylesync-mcp = "stylesync.mcp_server:main"
 stylesync-data = "stylesync.clean.pipeline:main"
 stylesync-neutralize = "stylesync.neutralize.run:main"
 stylesync-dataset = "stylesync.dataset.build:main"
+stylesync-train = "stylesync.train.sft:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
