@@ -47,6 +47,7 @@
 - CI (`.github/workflows/ci.yml`): tests on Ubuntu, macOS and Windows.
 - Phase 2 report (`reports/neutralize.md`): pilot v1 vs v2, full run 17,038 pairs from 8,769 bursts, real cost $1.06.
 - omp setup: `integrations/omp/` holds a `stylesync` skill and an `AGENTS.md` rule so omp calls `rewrite_style` before a commit, a comment or a message; README shows the `mcp.json` entry.
+- MIT `LICENSE`, and a README for readers outside the project: what stylesync is, the reference run's results, the layout, and how to train your own voice step by step.
 - `reports/project_report.md`: one Vietnamese report of the whole project, Phase 0 to omp (results, costs, privacy, decisions, what is not verified); aggregates only.
 
 ### Changed

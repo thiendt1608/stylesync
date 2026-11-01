@@ -70,7 +70,7 @@ Discord 2019–2022 (8,107 burst, kh dùng; quý n ≥ 30): viết tắt 0.04–
 
 | Lượt | Mẫu lỗi | Lỗi tìm thấy → rule thêm vào |
 |---|---|---|
-| 1 | 5/200 = 2.5% (+ lỗi tìm qua audit riêng) | JWT/token dài lọt qua (→ `<SECRET>`); 1 mật khẩu dạng `pw: …` (→ rule credential); code Lua; spam lặp; burst toàn `<NAME>`; câu tiếng Anh dài; scrubber che nhầm "AI", "Google", "FPT", "tiền", "gia đình"… (lấy từ tên page/shop) → chỉ dùng tên người, Title-case |
+| 1 | 5/200 = 2.5% (+ lỗi tìm qua audit riêng) | JWT/token dài lọt qua (→ `<SECRET>`); credential dạng `pw: …` (→ rule credential); code Lua; spam lặp; burst toàn `<NAME>`; câu tiếng Anh dài; scrubber che nhầm "AI", "Google", "FPT", "tiền", "gia đình"… (lấy từ tên page/shop) → chỉ dùng tên người, Title-case |
 | 2 | 9/200 = 4.5% | SQL dán vào; 7 burst gõ kh dấu; 1 email kh có TLD (`…@gmail`) |
 | 3 (cuối) | **1/200 = 0.5%** | 1 burst còn đuôi "(edited)" (đã strip) |
 
@@ -104,5 +104,5 @@ Việc cho owner (kh chặn Phase 2): mở `configs/threads.yaml`, đặt `inclu
 
 ## 6. Bảo mật
 
-- Có **1 mật khẩu cũ** (dạng `pw: …`) và vài JWT trong lịch sử chat Discord. Đã che trong data train. Nếu mật khẩu đó còn dùng ở đâu thì nên **đổi**. JWT là token cũ của web trường, có lẽ đã hết hạn (not verified).
+- Credential và token dán trong chat được che bằng rule (`<SECRET>`, rule credential) trước khi gửi đi neutralize hay đưa vào train.
 - `data/`, `configs/threads.yaml` và export gốc đều gitignored. Report này và `drift.svg` chỉ có số tổng hợp.

@@ -161,7 +161,7 @@ Owner xác nhận commit/comment cũ trên GitHub đều do AI viết, kh phải
 
 ### 4.3. Bảo mật
 
-- Tìm thấy **1 mật khẩu cũ** và vài JWT trong lịch sử chat Discord. Đã che trong data train và khuyên owner đổi mật khẩu nếu còn dùng.
+- Credential và token dán trong chat được che bằng rule (`<SECRET>`, rule credential) trước khi gửi đi hay train.
 - Tên gọi viết thường (vd "ê <tên> ơi") còn sót ~1/10 mẫu. Lý do: participant list lẫn tên page/shop, nên rule bắt tên viết thường che nhầm từ thường. Chấp nhận vì adapter private.
 
 ---
@@ -552,7 +552,6 @@ Giá Batch gpt-6-luna lúc chạy: $0.05 input / $0.25 output mỗi 1M token (xe
   - lọc file nhạy cảm trong `git ls-files` + toàn bộ history.
   - Lần gần nhất sạch.
   - `pip-audit` kh có trên máy → **skipped**.
-- **Đã báo owner:** 1 mật khẩu cũ trong chat Discord (đã che trong data), nên đổi nếu còn dùng.
 - **Runtime:**
   - llama-server chỉ bind `127.0.0.1`;
   - chỉ tự start server khi URL là localhost;
