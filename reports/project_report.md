@@ -16,7 +16,8 @@ Chỗ nào chưa kiểm được thì ghi **not verified**.
 - **Tốc độ dùng thật:** Mac (Metal) 0.4–0.9s/lần. Windows/Linux (CPU + GPU 3060) khoảng 1.3s/lần sau lần gọi đầu.
 - **Chi phí API:** tổng ≈ **$1.62** OpenAI Batch: Phase 2 $1.08, Phase 5 $0.54. Train trên GPU nhà (RTX 3060), kh tốn tiền cloud.
 - **Riêng tư:** data, adapter và model kh lên git, kh public. Commit chỉ có code, config mẫu, test giả và report tổng hợp.
-- **Còn thiếu:** CI 3 OS chưa chạy lần nào (repo chưa có remote). Claude Code interactive trên Windows chưa test. omp mới thử với model mặc định. Blind test chưa đạt.
+- **Public:** <https://github.com/thiendt1608/stylesync> (MIT, chỉ code + report). CI lần đầu xanh cả 3 OS.
+- **Còn thiếu:** Claude Code interactive trên Windows chưa test. omp mới thử với model mặc định. Blind test chưa đạt.
 
 ---
 
@@ -76,7 +77,7 @@ Agent dùng nguyên văn `text` để commit / comment / nhắn tin
 | `e0fdb52` | 2026-11-01 10:27 | Hardening sau e2e thật (5 bug + coverage guard) | 7 file, +178 |
 | `3b1f3ce` | 2026-11-01 11:25 | Cấu hình stylesync cho omp | 5 file, +59 |
 
-Tổng cộng 12 commit trong khoảng 6 ngày (2026-10-27 → 2026-11-01). Repo chưa có remote.
+Tổng cộng 12 commit trong khoảng 6 ngày (2026-10-27 → 2026-11-01). Sau đó có thêm commit báo cáo này (`296786f`) và commit chuẩn bị public (`5a36fdd`: LICENSE MIT, README cho người ngoài). Repo public ở <https://github.com/thiendt1608/stylesync> từ 2026-11-01.
 
 ---
 
@@ -580,7 +581,6 @@ Giá Batch gpt-6-luna lúc chạy: $0.05 input / $0.25 output mỗi 1M token (xe
 
 ## 17. Chưa xong / not verified
 
-- **CI 3 OS chưa chạy lần nào:** repo chưa có remote. Đã chạy pytest tay trên cả 3 OS, nhưng GitHub Actions thì chưa.
 - **Blind test 68%:** chưa đạt ~50%. Hướng tiếp: thêm người chấm; thêm data owner tự viết (commit/comment); thử `gemma4-e2b-r16-e2` hoặc r32.
 - **Claude Code interactive trên Windows:** chưa test. Mới test qua ssh, mà ở đó server chết khi phiên ssh đóng.
 - **omp:** mới test với model mặc định gemini-3.8-flash. Model khác có tự đọc skill hay kh thì not verified.
