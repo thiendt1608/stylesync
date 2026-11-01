@@ -42,6 +42,9 @@
   - `convert` turns the chosen LoRA adapter into a LoRA GGUF with llama.cpp's converter, to load as `llama-server --lora` on top of the base Q4_K_M GGUF;
   - `parity` starts its own llama-server (Metal or CPU), rewrites a fixed sample of the test set and the owner set greedily with the training prompt, and checks each request has exactly one BOS, as in training;
   - `report` writes `reports/export.md`: agreement with the Phase 5 PyTorch outputs (exact, chrF), guard and hard-token rates, BOS, runaway rate and latency, aggregates only.
+- Phase 7 local backend (`src/stylesync/llama.py`): `rewrite_style` starts one shared `llama-server` (base Q4_K_M GGUF + stylesync LoRA GGUF) on `127.0.0.1:18080` when nothing is listening, detached so later Claude Code sessions reuse it, and refuses a server on that port without the stylesync adapter. Model files live in `platformdirs.user_cache_dir("stylesync")`; `uv run stylesync-export install` copies them there. `STYLESYNC_*` environment variables override the URL and paths.
+- `README.md`: Claude Code setup (`claude mcp add`) and the `~/.claude/CLAUDE.md` rule that makes the agent call `rewrite_style`.
+- CI (`.github/workflows/ci.yml`): tests on Ubuntu, macOS and Windows.
 - Phase 2 report (`reports/neutralize.md`): pilot v1 vs v2, full run 17,038 pairs from 8,769 bursts, real cost $1.06.
 
 ### Changed
@@ -49,6 +52,7 @@
 - Neutralize prompt v2: keeps IT terms in English ("push code", not "đẩy mã nguồn"), keeps anh/em/chị pronouns, rewrites slang only when its meaning is clear, and adds no subject, question tag or connective the original lacks.
 - Plan: GitHub commits/comments dropped as a data source (they were AI-written). Training uses chat data only; commit/comment rewrites are evaluated on a small owner-written set.
 - `rewrite_style` sends code spans (inline and fenced) to the model as `<CODE1>`, `<CODE2>`… and puts them back after, since the adapters keep a span's text but drop its backticks; the guard rejects a slot the model made up. On the owner set the guard pass rate goes from 48% to 100% (ft-gemma4-e2b-r16-e1) with meaning unchanged (4.97); `stylesync-eval gen` does the same for systems with `mask: true`.
+- `rewrite_style` sends the training system prompt and decodes greedily, as in eval and parity, instead of a descriptive prompt; the guard also rejects a new email, URL or phone number, and a backend failure returns the neutral text with a warning. `health` reports the adapter, model files, last latency and whether this session started the server.
 - Train a single voice: no casual/work tone tag in the data pipeline, dataset or `rewrite_style` (work-style data was 8 of 8,769 samples). `configs/threads.yaml` keeps only `include`.
 
 ### Fixed

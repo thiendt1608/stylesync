@@ -413,6 +413,16 @@ Python MCP SDK (FastMCP), transport **stdio**, là lớp mỏng gọi `llama-ser
 
 **Human-in-the-loop:** server chỉ trả text, kh tự commit, kh tự post comment, kh tự gửi tin. Ghi vào `CLAUDE.md` để owner xem trước khi gửi tin nhắn cho ng thật.
 
+**Đã làm (2026-11-01, Phase 7, `src/stylesync/{llama,mcp_server}.py`, `README.md`):**
+- **Backend dùng chung (10.2):** `llama.ensure` kiểm `/health`; có server mà kh load adapter `stylesync-lora.gguf` (vd server bench Phase 0) → từ chối, kh dùng nhầm base. Chưa có ai nghe ở `127.0.0.1:18080` → spawn `llama-server -m <base> --lora <lora> -c 2048 -np 1 --reasoning off -ngl 99` detached (macOS/Linux `start_new_session`, Windows `DETACHED_PROCESS`), log ở `llama-server.log` cạnh model. 2 session spawn cùng lúc thì cái sau chết vì trùng port và dùng server của cái trước. URL kh phải local → kh tự spawn.
+- **Model file:** `stylesync-export install` copy base + LoRA GGUF vào `platformdirs.user_cache_dir("stylesync")` (bỏ qua file đã có cùng size); env `STYLESYNC_*` override từng path.
+- **Sampling:** greedy (temperature 0) + SYSTEM của train, giống Phase 5 eval và Phase 6 parity, thay cho ~0.3 ở trên: đó là cấu hình đã đo.
+- **Guard:** thêm luật PII mới (email, URL, SĐT VN có trong output mà kh có trong input). Backend lỗi (`BackendError`, HTTP, JSON hỏng) → trả bản trung tính + warning `local model unavailable`.
+- **`health`:** backend URL, ok, adapter đã load, path base/LoRA, file có đủ, latency lần gọi gần nhất, session này có tự spawn server kh.
+- **Smoke thật trên Mac (stdio, Claude Code chưa đăng ký):** session 1 tự spawn server, lần gọi đầu 1.82s (gồm load model), sau đó 0.4–0.9s; session 2 dùng lại server (`started_server: false`), 0.42–0.75s. 4 câu tổng hợp (commit có prefix + trailer, comment có backtick, tin nhắn) đều qua guard. Windows/Linux chưa chạy thật (not verified).
+- **CI:** `.github/workflows/ci.yml` matrix 3 OS chạy `uv sync --frozen --group dev` + `pytest`; repo chưa có remote nên CI chưa chạy lần nào (not verified). Lint và smoke Qwen3.5-0.8B GGUF chưa làm.
+- **Còn lại:** đăng ký `claude mcp add` + rule trong `~/.claude/CLAUDE.md` (owner quyết, snippet trong `README.md`), đo xem agent có hay quên gọi kh rồi mới tính hook (bước 3).
+
 ### 10.4. CLI + git hook (phương án phụ)
 
 Cho lúc m tự commit, kh có agent. Dùng chung core `Rewriter` + guard với MCP server.

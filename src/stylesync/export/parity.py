@@ -1,6 +1,7 @@
 """Phase 6: export the chosen LoRA adapter to GGUF and check the GGUF build against Phase 5 (plan section 10.1).
 
   stylesync-export convert                        adapter -> LoRA GGUF (llama.cpp converter, separate venv)
+  stylesync-export install                        copy the base + LoRA GGUF to where the MCP server loads them
   stylesync-export parity --device metal|cpu [--set chat|owner] [--limit N]
   stylesync-export report
 
@@ -13,6 +14,7 @@ the rendered template tokenized with special tokens added, and that starts with 
 """
 import argparse
 import random
+import shutil
 import statistics
 import subprocess
 import time
@@ -24,6 +26,7 @@ import httpx
 
 from stylesync.clean.pipeline import read_jsonl
 from stylesync.eval.metrics import checks, stylometry
+from stylesync import llama
 from stylesync.eval.run import load_cfg
 from stylesync.mcp_server import guard, mask, unmask
 from stylesync.neutralize.run import append_jsonl
@@ -231,9 +234,20 @@ def convert(cfg: dict, base: Path) -> Path:
     return out
 
 
+def install(cfg: dict, base: Path, s: llama.Settings) -> list[Path]:
+    """Copy the build into the MCP server's model paths; a file already there with the same size is kept."""
+    done = []
+    for src, dst in ((base / cfg["base_gguf"], s.base), (base / cfg["lora_gguf"], s.lora)):
+        if not (dst.is_file() and dst.stat().st_size == src.stat().st_size):
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dst)
+        done.append(dst)
+    return done
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["convert", "parity", "report"])
+    ap.add_argument("cmd", choices=["convert", "install", "parity", "report"])
     ap.add_argument("--config", default="configs/export.yaml")
     ap.add_argument("--device", choices=DEVICES, default="metal")
     ap.add_argument("--set", choices=["chat", "owner"], dest="sets", action="append",
@@ -244,6 +258,8 @@ def main() -> None:
     cfg = load_cfg(base, args.config)
     if args.cmd == "convert":
         print(convert(cfg, base))
+    elif args.cmd == "install":
+        print("\n".join(map(str, install(cfg, base, llama.Settings.from_env()))))
     elif args.cmd == "parity":
         for name in args.sets or list(cfg["sets"]):
             print(parity(cfg, base, name, args.device, args.limit))

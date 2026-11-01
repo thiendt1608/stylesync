@@ -71,7 +71,7 @@ def test_made_up_slot_is_rejected_by_guard():
 def test_rewrite_style_sends_masked_text_and_restores_backticks(monkeypatch):
     seen = []
 
-    def fake(text, task):
+    def fake(text):
         seen.append(text)
         return "fix null trong <CODE1> rồi nha"  # what an adapter does with a placeholder: copy it
 
@@ -79,3 +79,55 @@ def test_rewrite_style_sends_masked_text_and_restores_backticks(monkeypatch):
     res = mcp_server.rewrite_style("fix(auth): Sửa lỗi null trong `get_user`.\n\nRefs: #12", "commit")
     assert seen == ["Sửa lỗi null trong <CODE1>."]
     assert res == {"text": "fix(auth): fix null trong `get_user` rồi nha\n\nRefs: #12", "guard_passed": True, "warnings": []}
+
+
+def test_guard_rejects_new_contact_details_only():
+    assert "new contact detail dev@example.com" in guard("Gửi file cho anh nhé.", "gửi file cho a nha dev@example.com")
+    assert any("https://x.example/a" in p for p in guard("Xem link nhé.", "xem https://x.example/a nha"))
+    assert any(p.startswith("new contact detail") for p in guard("Gọi anh nhé.", "gọi a 0912345678 nha"))
+    assert guard("Gửi về dev@example.com nhé.", "gửi về dev@example.com nha") == []
+
+
+def test_rewrite_style_falls_back_when_backend_is_down(monkeypatch):
+    def down(text):
+        raise mcp_server.llama.BackendError("model file missing: x.gguf")
+
+    monkeypatch.setattr(mcp_server, "_generate", down)
+    res = mcp_server.rewrite_style("Đã sửa lỗi rồi.", "message")
+    assert res == {"text": "Đã sửa lỗi rồi.", "guard_passed": False,
+                   "warnings": ["local model unavailable: model file missing: x.gguf"]}
+
+
+def test_rewrite_style_uses_the_training_prompt(monkeypatch):
+    seen = {}
+
+    def chat(client, system, text, max_tokens=256):
+        seen.update(system=system, text=text)
+        return "fix r nha", 0.4
+
+    monkeypatch.setattr(mcp_server.llama, "ensure", lambda client, s: False)
+    monkeypatch.setattr(mcp_server.llama, "chat", chat)
+    res = mcp_server.rewrite_style("Tôi đã sửa xong.", "comment")
+    assert seen == {"system": mcp_server.SYSTEM, "text": "Tôi đã sửa xong."} and res["guard_passed"]
+    assert mcp_server.STATE["last_latency_s"] == 0.4
+    from stylesync.dataset.build import SYSTEM
+    assert mcp_server.SYSTEM == SYSTEM
+
+
+def test_tools_over_an_mcp_client(monkeypatch):
+    import asyncio
+    import json
+
+    from mcp.client import Client
+
+    monkeypatch.setattr(mcp_server, "_generate", lambda text: "sửa null trong <CODE1> r nha")
+
+    async def run():
+        async with Client(mcp_server.mcp) as client:
+            names = {t.name for t in (await client.list_tools()).tools}
+            res = await client.call_tool("rewrite_style", {"text": "fix: Sửa lỗi null trong `get_user`.", "task": "commit"})
+            return names, json.loads(res.content[0].text)
+
+    names, res = asyncio.run(run())
+    assert {"rewrite_style", "health"} <= names
+    assert res == {"text": "fix: sửa null trong `get_user` r nha", "guard_passed": True, "warnings": []}

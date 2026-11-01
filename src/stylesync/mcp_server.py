@@ -1,18 +1,16 @@
-"""Minimal MCP server (Phase 0 spike): exposes rewrite_style backed by a local llama-server."""
-import os
+"""stylesync MCP server (plan section 10.3): tools rewrite_style and health over stdio.
+
+A thin layer over the shared llama-server (`stylesync.llama`): the conventional-commit prefix, trailers and code
+spans are handled here in code, the model only rewrites the rest, and a guard falls back to the neutral text.
+"""
 import re
 
 import httpx
 from mcp.server.mcpserver import MCPServer
 
-LLAMA_URL = os.environ.get("STYLESYNC_LLAMA_URL", "http://127.0.0.1:18080")
-SYSTEM = (
-    "Bạn là bộ viết lại văn phong. Viết lại đoạn văn của người dùng theo giọng nhắn tin thân mật "
-    "kiểu Gen Z Việt Nam: câu ngắn, dùng viết tắt phổ biến (kh, đc, z, nma, bt, ng, mn, vd), "
-    "thuật ngữ kỹ thuật giữ tiếng Anh. Giữ NGUYÊN ý, không thêm, không bớt. "
-    "Giữ nguyên mọi nội dung trong dấu backtick. Chỉ trả về bản viết lại, không giải thích.\n"
-    "Loại văn bản: {task}"
-)
+from stylesync import llama
+# The training system prompt: the adapter was trained with it (Phase 3) and evaluated with it (Phase 5-6).
+from stylesync.dataset.build import SYSTEM
 PREFIX = re.compile(r"^[a-z]+(\([^)]*\))?!?:\s*")
 TRAILER = re.compile(r"^[A-Za-z-]+: .+$")
 VN = re.compile(r"[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]")
@@ -21,6 +19,8 @@ TASKS = ("message", "commit", "comment")
 # backticks (chat data has almost none), so code goes around the model as numbered placeholders.
 SPAN = re.compile(r"```.*?```|`[^`\n]+`", re.S)
 SLOT = re.compile(r"<CODE(\d+)>")
+# Contact details the model must not invent (the training data had them scrubbed to placeholders).
+PII = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+|https?://\S+|(?<!\d)(?:\+?84|0)\d{9,10}(?!\d)")
 
 mcp = MCPServer("stylesync")
 
@@ -79,44 +79,46 @@ def guard(source: str, output: str) -> list[str]:
         problems.append("Vietnamese lost (no diacritics in output)")
     if re.search(r"<(NAME|PHONE|EMAIL|CODE\d+)>", output):
         problems.append("placeholder leaked")
+    for token in set(PII.findall(output)) - set(PII.findall(source)):
+        problems.append(f"new contact detail {token}")
     ratio = len(output) / max(len(source), 1)
     if not 0.3 <= ratio <= 2.5:
         problems.append(f"length ratio {ratio:.2f} out of range")
     return problems
 
 
-def _generate(text: str, task: str) -> str:
-    body = {
-        "messages": [
-            {"role": "system", "content": SYSTEM.format(task=task)},
-            {"role": "user", "content": text},
-        ],
-        "temperature": 0.3,
-        "max_tokens": 256,
-        "chat_template_kwargs": {"enable_thinking": False},
-    }
-    r = httpx.post(f"{LLAMA_URL}/v1/chat/completions", json=body, timeout=30)
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+STATE = {"last_latency_s": None, "started_server": False}
+
+
+def _generate(text: str) -> str:
+    s = llama.Settings.from_env()
+    with httpx.Client(base_url=s.url) as client:
+        STATE["started_server"] |= llama.ensure(client, s)
+        out, seconds = llama.chat(client, SYSTEM, text)
+    STATE["last_latency_s"] = round(seconds, 3)
+    return out
 
 
 @mcp.tool()
 def rewrite_style(text: str, task: str = "message") -> dict:
-    """Rewrite neutral text into the owner's personal voice (Vietnamese, casual, abbreviations).
+    """Rewrite a neutral Vietnamese draft into the owner's own voice (casual, abbreviations, Gen Z).
 
     Call this before writing a commit message, a PR/issue comment, or a chat message on the
-    owner's behalf. Pass a neutral, complete draft as `text` and `task` as one of
-    message | commit | comment. Use the returned `text` VERBATIM: do not fix spelling,
-    abbreviations or tone. If `guard_passed` is false, `text` is the neutral draft; use it and
-    tell the owner.
+    owner's behalf. `text` is a complete neutral draft in Vietnamese that addresses people with
+    anh/em, as the owner does (not tôi/bạn); keep code, paths and identifiers in backticks.
+    `task` is message | commit | comment; for a commit pass the whole message: the
+    `type(scope):` prefix and trailers are kept by code. Use the returned `text` VERBATIM: do
+    not fix spelling, abbreviations or tone. If `guard_passed` is false, `text` is the neutral
+    draft; use it and tell the owner why (`warnings`). Never send a message to another person
+    without the owner seeing it first.
     """
     if task not in TASKS:
         task = "message"
     prefix, core, trailers = split_commit(text) if task == "commit" else ("", text.strip(), "")
     masked, spans = mask(core)
     try:
-        rewritten = unmask(_generate(masked, task), spans)
-    except (httpx.HTTPError, KeyError, IndexError) as e:
+        rewritten = unmask(_generate(masked), spans)
+    except (llama.BackendError, httpx.HTTPError, KeyError, IndexError) as e:
         return {"text": text, "guard_passed": False, "warnings": [f"local model unavailable: {e}"]}
     problems = guard(core, rewritten)
     if problems:
@@ -127,12 +129,13 @@ def rewrite_style(text: str, task: str = "message") -> dict:
 
 @mcp.tool()
 def health() -> dict:
-    """Report whether the local llama-server backend is reachable."""
-    try:
-        ok = httpx.get(f"{LLAMA_URL}/health", timeout=3).status_code == 200
-    except httpx.HTTPError:
-        ok = False
-    return {"backend": LLAMA_URL, "ok": ok}
+    """Report the local llama-server backend: reachable, stylesync adapter loaded, model files, last latency."""
+    s = llama.Settings.from_env()
+    with httpx.Client(base_url=s.url) as client:
+        ok = llama.healthy(client)
+        adapter = ok and llama.adapter_loaded(client, s)
+    return {"backend": s.url, "ok": ok, "adapter_loaded": adapter, "base": str(s.base), "lora": str(s.lora),
+            "model_files_present": s.base.is_file() and s.lora.is_file(), **STATE}
 
 
 def main() -> None:

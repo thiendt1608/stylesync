@@ -84,3 +84,18 @@ report: report.md
     text = parity.report(cfg, tmp_path).read_text(encoding="utf-8")
     assert "| chat | metal | 1 | 100% | 100.0 |" in text and "| chat | cpu |" not in text
     assert "rảnh" not in text  # aggregates only
+
+
+def test_install_copies_once(tmp_path: Path):
+    from stylesync import llama
+
+    (tmp_path / "b.gguf").write_bytes(b"base")
+    (tmp_path / "l.gguf").write_bytes(b"lora")
+    dest = tmp_path / "cache"
+    s = llama.Settings(url="http://127.0.0.1:1", model_dir=dest, base=dest / "base.gguf", lora=dest / "lora.gguf",
+                       server_bin="llama-server")
+    cfg = {"base_gguf": "b.gguf", "lora_gguf": "l.gguf"}
+    assert parity.install(cfg, tmp_path, s) == [s.base, s.lora] and s.lora.read_bytes() == b"lora"
+    mtime = s.base.stat().st_mtime_ns
+    parity.install(cfg, tmp_path, s)
+    assert s.base.stat().st_mtime_ns == mtime  # same size: left alone
