@@ -34,4 +34,25 @@ The tool description alone is not enough for Claude Code to call a deferred MCP 
 - Tin gửi người thật: đưa t xem trước, kh tự gửi.
 ```
 
+## Use with omp
+
+omp (oh-my-pi) reads its own config, not Claude Code's. Add the server to `~/.omp/agent/mcp.json` under
+`mcpServers` (the tool is then `mcp__stylesync_rewrite_style`, called through `xd://`):
+
+```json
+"stylesync": {
+  "type": "stdio",
+  "command": "/opt/homebrew/bin/uv",
+  "args": ["run", "--directory", "/path/to/fine-tune-chat", "stylesync-mcp"],
+  "env": {"STYLESYNC_LLAMA_SERVER": "/opt/homebrew/bin/llama-server"}
+}
+```
+
+Then link the skill and append the rule to the user-level context file:
+
+```bash
+ln -s "$PWD/integrations/omp/stylesync" ~/.agents/skills/stylesync
+cat integrations/omp/AGENTS.md >> ~/.omp/agent/AGENTS.md
+```
+
 Stop the backend: `pkill -f "llama-server.*stylesync-lora"` (Windows: end `llama-server.exe` in Task Manager).
