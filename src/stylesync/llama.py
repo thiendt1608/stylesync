@@ -24,6 +24,10 @@ class BackendError(RuntimeError):
     """The backend cannot serve a rewrite; the caller falls back to the neutral text."""
 
 
+class Truncated(BackendError):
+    """The rewrite hit max_tokens, so part of the draft is missing from it."""
+
+
 @dataclass(frozen=True)
 class Settings:
     url: str
@@ -56,6 +60,15 @@ def healthy(client: httpx.Client) -> bool:
         return False
 
 
+def listening(client: httpx.Client) -> bool:
+    """Something answers on the port, even a 503: llama-server binds before it loads the model."""
+    try:
+        client.get("/health", timeout=3)
+        return True
+    except httpx.HTTPError:
+        return False
+
+
 def adapter_loaded(client: httpx.Client, s: Settings) -> bool:
     """A server on the port that was started without our LoRA (a Phase 0 bench, say) must not be used."""
     try:
@@ -76,7 +89,7 @@ def spawn(s: Settings) -> subprocess.Popen:
     return subprocess.Popen(server_args(s), stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, **detach)
 
 
-def ensure(client: httpx.Client, s: Settings, timeout_s: float = 90, grace_s: float = 30) -> bool:
+def ensure(client: httpx.Client, s: Settings, timeout_s: float = 90) -> bool:
     """Make sure a llama-server with the stylesync adapter answers at s.url. Returns True if this call started it."""
     if healthy(client):
         if not adapter_loaded(client, s):
@@ -93,25 +106,26 @@ def ensure(client: httpx.Client, s: Settings, timeout_s: float = 90, grace_s: fl
     except OSError as e:
         raise BackendError(f"cannot start {s.server_bin}: {e}") from e
     log = s.model_dir / "llama-server.log"
-    deadline, exited = time.monotonic() + timeout_s, None
+    deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if healthy(client):  # ours, or one another session started at the same time (ours then exits: port taken)
             if not adapter_loaded(client, s):
                 raise BackendError(f"the server at {s.url} has no {s.lora.name} adapter loaded")
             return True
-        if exited is None and proc.poll() is not None:
-            exited = time.monotonic()
-        if exited is not None and time.monotonic() - exited > grace_s:  # no other session's server came up either
+        if proc.poll() is not None and not listening(client):  # no other session's server is loading either
             raise BackendError(f"llama-server exited with {proc.returncode}, see {log}")
         time.sleep(0.25)
     raise BackendError(f"llama-server did not become ready in {timeout_s:.0f}s, see {log}")
 
 
-def chat(client: httpx.Client, system: str, text: str, max_tokens: int = 256) -> tuple[str, float]:
-    """Greedy rewrite, as in Phase 5 eval and Phase 6 parity. Returns (text, seconds)."""
+def chat(client: httpx.Client, system: str, text: str, max_tokens: int = 512) -> tuple[str, float]:
+    """Greedy rewrite, as in Phase 5 eval and Phase 6 parity. Returns (text, seconds); a cut-off output raises."""
     body = {"messages": [{"role": "system", "content": system}, {"role": "user", "content": text}],
             "temperature": 0, "max_tokens": max_tokens, "chat_template_kwargs": {"enable_thinking": False}}
     t = time.perf_counter()
     r = client.post("/v1/chat/completions", json=body, timeout=60)
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip(), time.perf_counter() - t
+    choice = r.json()["choices"][0]
+    if choice.get("finish_reason") == "length":
+        raise Truncated(f"output hit max_tokens={max_tokens}")
+    return choice["message"]["content"].strip(), time.perf_counter() - t

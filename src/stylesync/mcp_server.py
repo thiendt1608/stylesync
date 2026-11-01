@@ -4,6 +4,7 @@ A thin layer over the shared llama-server (`stylesync.llama`): the conventional-
 spans are handled here in code, the model only rewrites the rest, and a guard falls back to the neutral text.
 """
 import re
+from collections import Counter
 
 import httpx
 from mcp.server.mcpserver import MCPServer
@@ -20,6 +21,8 @@ TASKS = ("message", "commit", "comment")
 SPAN = re.compile(r"```.*?```|`[^`\n]+`", re.S)
 SLOT = re.compile(r"<CODE(\d+)>")
 # Contact details the model must not invent (the training data had them scrubbed to placeholders).
+PARA = re.compile(r"\n[ \t]*\n")
+LETTER = re.compile(r"[^\W\d_]")
 PII = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+|https?://\S+|(?<!\d)(?:\+?84|0)\d{9,10}(?!\d)")
 
 mcp = MCPServer("stylesync")
@@ -61,6 +64,16 @@ def unmask(text: str, spans: list[str]) -> str:
     return SLOT.sub(lambda m: spans[int(m.group(1)) - 1] if 0 < int(m.group(1)) <= len(spans) else m.group(0), text)
 
 
+def coverage(source: str, output: str, n: int = 3) -> float:
+    """Share of the draft's character n-grams (with their counts) that the rewrite still has."""
+    def grams(text: str) -> Counter:
+        text = re.sub(r"\s+", " ", text.lower())
+        return Counter(text[i:i + n] for i in range(len(text) - n + 1))
+    src, out = grams(source), grams(output)
+    total = sum(src.values())
+    return sum(min(c, out[g]) for g, c in src.items()) / total if total else 1.0
+
+
 def guard(source: str, output: str) -> list[str]:
     """Return guard violations; an empty list means the rewrite can be used."""
     problems = []
@@ -79,8 +92,13 @@ def guard(source: str, output: str) -> list[str]:
         problems.append("Vietnamese lost (no diacritics in output)")
     if re.search(r"<(NAME|PHONE|EMAIL|CODE\d+)>", output):
         problems.append("placeholder leaked")
-    for token in set(PII.findall(output)) - set(PII.findall(source)):
-        problems.append(f"new contact detail {token}")
+    for token in {m.rstrip(".,;:!?)") for m in PII.findall(output)}:  # "…/docs," in the draft, "…/docs" here
+        if token not in source:
+            problems.append(f"new contact detail {token}")
+    # Catches a rewrite that drops a large part of a long draft. On the Phase 5 test set no rewrite the judge kept
+    # whole falls under 0.25 at 20+ words (median 0.60); losing one detail cannot be told apart this way.
+    if len(source.split()) >= 20 and (c := coverage(source, output)) < 0.25:
+        problems.append(f"most of the draft is missing (coverage {c:.2f})")
     ratio = len(output) / max(len(source), 1)
     if not 0.3 <= ratio <= 2.5:
         problems.append(f"length ratio {ratio:.2f} out of range")
@@ -99,6 +117,21 @@ def _generate(text: str) -> str:
     return out
 
 
+def _rewrite_paragraphs(masked: str, subject: bool) -> str:
+    """Send one paragraph at a time: the adapter learned single chat bursts, and given several it fills the blank
+    line with filler ("kk") and runs a commit's subject into its body. A paragraph that is only code is kept."""
+    out = []
+    for i, para in enumerate(p.strip("\n") for p in PARA.split(masked)):
+        if not LETTER.search(SLOT.sub("", para)):
+            out.append(para)
+            continue
+        new = _generate(para)
+        if subject and i == 0:  # a commit subject stays one line
+            new = " ".join(line.strip() for line in new.splitlines() if line.strip())
+        out.append(new)
+    return "\n\n".join(p for p in out if p)
+
+
 @mcp.tool()
 def rewrite_style(text: str, task: str = "message") -> dict:
     """Rewrite a neutral Vietnamese draft into the owner's own voice (casual, abbreviations, Gen Z).
@@ -115,9 +148,18 @@ def rewrite_style(text: str, task: str = "message") -> dict:
     if task not in TASKS:
         task = "message"
     prefix, core, trailers = split_commit(text) if task == "commit" else ("", text.strip(), "")
-    masked, spans = mask(core)
+    masked, spans = mask(core.replace("\r\n", "\n"))
+    prose = SLOT.sub("", masked)
+    if not core.strip():
+        return {"text": text, "guard_passed": False, "warnings": ["empty draft: nothing to rewrite"]}
+    if not prose.strip():  # only code: already final
+        return {"text": text, "guard_passed": True, "warnings": []}
+    if not VN.search(prose.lower()) and len(prose.split()) >= 4:
+        return {"text": text, "guard_passed": False, "warnings": ["draft is not Vietnamese: left unchanged"]}
     try:
-        rewritten = unmask(_generate(masked), spans)
+        rewritten = unmask(_rewrite_paragraphs(masked, subject=task == "commit"), spans)
+    except llama.Truncated as e:
+        return {"text": text, "guard_passed": False, "warnings": [f"rewrite incomplete: {e}"]}
     except (llama.BackendError, httpx.HTTPError, KeyError, IndexError) as e:
         return {"text": text, "guard_passed": False, "warnings": [f"local model unavailable: {e}"]}
     problems = guard(core, rewritten)

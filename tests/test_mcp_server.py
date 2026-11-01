@@ -1,3 +1,5 @@
+import pytest
+
 from stylesync import mcp_server
 from stylesync.mcp_server import guard, mask, split_commit, unmask
 
@@ -86,6 +88,8 @@ def test_guard_rejects_new_contact_details_only():
     assert any("https://x.example/a" in p for p in guard("Xem link nhé.", "xem https://x.example/a nha"))
     assert any(p.startswith("new contact detail") for p in guard("Gọi anh nhé.", "gọi a 0912345678 nha"))
     assert guard("Gửi về dev@example.com nhé.", "gửi về dev@example.com nha") == []
+    # the draft's URL ends with a comma, the rewrite drops it: still the same URL
+    assert guard("Docs ở https://example.com/docs/cart, em đọc nhé.", "docs ở https://example.com/docs/cart e đọc nha") == []
 
 
 def test_rewrite_style_falls_back_when_backend_is_down(monkeypatch):
@@ -131,3 +135,59 @@ def test_tools_over_an_mcp_client(monkeypatch):
     names, res = asyncio.run(run())
     assert {"rewrite_style", "health"} <= names
     assert res == {"text": "fix: sửa null trong `get_user` r nha", "guard_passed": True, "warnings": []}
+
+
+def test_rewrite_style_sends_one_paragraph_at_a_time(monkeypatch):
+    seen = []
+
+    def fake(text):
+        seen.append(text)
+        return {"Thêm <CODE1> cho <CODE2>.": "thêm <CODE1>\ncho <CODE2> nha",
+                "Hàm <CODE3> giờ nhận thêm <CODE4>.": "hàm <CODE3> giờ nhận thêm <CODE4> r"}[text]
+
+    monkeypatch.setattr(mcp_server, "_generate", fake)
+    msg = ("feat(cart): Thêm `discount` cho `total`.\r\n\r\nHàm `total` giờ nhận thêm `discount`.\r\n\r\n"
+           "```py\ntotal(items, 0.1)\n```\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
+    res = mcp_server.rewrite_style(msg, "commit")
+    assert seen == ["Thêm <CODE1> cho <CODE2>.", "Hàm <CODE3> giờ nhận thêm <CODE4>."]  # the code block is not sent
+    assert res["guard_passed"] and res["text"] == (
+        "feat(cart): thêm `discount` cho `total` nha\n\n"  # the subject stays one line, the blank line stays
+        "hàm `total` giờ nhận thêm `discount` r\n\n```py\ntotal(items, 0.1)\n```\n\n"
+        "Co-Authored-By: Claude <noreply@anthropic.com>")
+
+
+def test_rewrite_style_leaves_empty_and_non_vietnamese_drafts(monkeypatch):
+    monkeypatch.setattr(mcp_server, "_generate", lambda text: pytest.fail("the model must not be called"))
+    assert mcp_server.rewrite_style("  ", "message") == {
+        "text": "  ", "guard_passed": False, "warnings": ["empty draft: nothing to rewrite"]}
+    assert mcp_server.rewrite_style("fix(ci): ", "commit")["warnings"] == ["empty draft: nothing to rewrite"]
+    assert mcp_server.rewrite_style("`make test`", "comment") == {"text": "`make test`", "guard_passed": True, "warnings": []}
+    en = "Please review the pull request when you have time."
+    assert mcp_server.rewrite_style(en, "comment") == {
+        "text": en, "guard_passed": False, "warnings": ["draft is not Vietnamese: left unchanged"]}
+
+
+def test_rewrite_style_rejects_a_cut_off_rewrite(monkeypatch):
+    def cut(text):
+        raise mcp_server.llama.Truncated("output hit max_tokens=512")
+
+    monkeypatch.setattr(mcp_server, "_generate", cut)
+    assert mcp_server.rewrite_style("Đã sửa lỗi rồi.", "message")["warnings"] == [
+        "rewrite incomplete: output hit max_tokens=512"]
+
+
+def test_guard_rejects_a_rewrite_that_drops_most_of_a_long_draft():
+    sentence = "Anh đã kiểm tra lại luồng thanh toán và thấy phần giảm giá bị làm tròn hai lần nên tổng tiền lệch."
+    draft = " ".join([sentence] * 4)
+    kept_one = "a check lại luồng thanh toán thấy phần giảm giá bị làm tròn 2 lần nên tổng tiền lệch"
+    assert any(p.startswith("most of the draft is missing") for p in guard(draft, kept_one))
+    assert not any(p.startswith("most of") for p in guard(draft, "\n".join([kept_one] * 4)))
+    short = "Anh đã sửa xong lỗi làm tròn rồi, em xem lại giúp anh nhé."
+    assert not any(p.startswith("most of") for p in guard(short, "ok nha"))  # under 20 words: length rule only
+
+
+def test_coverage_counts_repeats():
+    from stylesync.mcp_server import coverage
+
+    assert coverage("abc abc", "abc abc") == 1.0 and coverage("", "x") == 1.0
+    assert coverage("abcabc", "abc") < coverage("abcabc", "abcabc")

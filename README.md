@@ -14,6 +14,9 @@ uv run stylesync-export install
 claude mcp add --scope user stylesync -- uv run --directory /path/to/fine-tune-chat stylesync-mcp
 ```
 
+If Claude Code runs from an app whose `PATH` lacks Homebrew, give absolute paths: `/opt/homebrew/bin/uv` as the
+command and `-e STYLESYNC_LLAMA_SERVER=/opt/homebrew/bin/llama-server` (after the server name).
+
 `install` copies the base and LoRA GGUF to `platformdirs.user_cache_dir("stylesync")` (macOS:
 `~/Library/Caches/stylesync`). The first `rewrite_style` call starts one `llama-server` on `127.0.0.1:18080`,
 detached, and later sessions reuse it; its log is `llama-server.log` next to the models. Overrides:

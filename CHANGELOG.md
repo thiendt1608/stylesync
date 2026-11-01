@@ -58,4 +58,9 @@
 ### Fixed
 - `rewrite_style` no longer treats a one-line commit such as `refactor: ...` as a trailer and rewrites an empty body: trailers must be the last paragraph, after a blank line, as in git.
 - Guard no longer rejects a rewrite that wraps an identifier already in the source in backticks.
+- `rewrite_style` rewrites one paragraph at a time. Given a whole commit message, the adapter put filler on the blank line after the subject and broke the body into lines, so git read the whole message as its subject. A commit subject now stays one line, and paragraphs that are only code are not sent to the model.
+- `rewrite_style` returns an empty or non-Vietnamese draft unchanged with a warning (it used to translate English into Vietnamese), passes a code-only draft through as is, and rejects a rewrite that hit `max_tokens` instead of returning a cut-off text.
+- Guard no longer reports a URL or email from the draft as a new contact detail when punctuation right after it changes.
+- A llama-server that exits at start-up (a broken model file, say) is reported at once instead of after 30 seconds, unless another session's server is still loading on the port.
+- Guard rejects a rewrite of a draft of 20+ words that keeps less than a quarter of its character trigrams, so a rewrite that drops most of the draft falls back to the neutral text.
 - `stylesync-eval report` no longer overwrites a blind sheet the owner has started answering.
