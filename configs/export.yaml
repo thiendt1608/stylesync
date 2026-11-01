@@ -1,0 +1,33 @@
+# Phase 6 export + parity settings (plan section 10). Paths are relative to the repo root.
+train_config: configs/train.yaml
+exp: gemma4-e2b-r16-e1              # Phase 5 winner (reports/eval.md, reports/eval_owner.md)
+adapter: runs/gemma4-e2b-r16-e1/adapter
+# Base GGUF + LoRA GGUF loaded with `llama-server --lora` (plan 10.1: separate adapter while iterating).
+# The base is the Unsloth Q4_K_M of google/gemma-4-E2B-it from Phase 0; its chat template matches the HF one
+# for system/user turns (they differ only in tool-call handling).
+base_gguf: models/gguf/gemma-4-E2B-it-Q4_K_M.gguf
+lora_gguf: models/gguf/stylesync-gemma4-e2b-r16-e1-lora-f16.gguf
+# `stylesync-export convert`: llama.cpp's converter needs torch + transformers, which the project env does
+# not install on the laptop; a separate venv is used (tools/ is gitignored).
+converter:
+  python: tools/venv-convert/bin/python
+  script: tools/llama.cpp/convert_lora_to_gguf.py
+server:
+  bin: llama-server
+  port: 18081                        # not the MCP server's 18080, so a running backend is left alone
+  ctx: 2048
+  threads: 4                         # CPU runs, as in Phase 0
+# Phase 5 PyTorch outputs of the same model + adapter, greedy: the parity reference.
+sets:
+  chat:
+    test: data/processed/splits/test.jsonl
+    reference: data/eval/outputs/ft-gemma4-e2b-r16-e1.jsonl
+    sample: 200
+  owner:
+    test: data/eval/owner/test.jsonl
+    reference: data/eval/owner/outputs/ft-gemma4-e2b-r16-e1-mask.jsonl
+    mask: true                       # code spans as <CODEn>, as rewrite_style sends them
+max_tokens: 256                      # Phase 5 gen.max_new_tokens
+seed: 7
+outputs_dir: data/export             # private: GGUF outputs and the server log
+report: reports/export.md

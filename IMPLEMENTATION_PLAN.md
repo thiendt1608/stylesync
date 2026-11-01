@@ -307,7 +307,7 @@ Hệ quả và cách xử lý:
   - Unsloth tự đổi repo sang `unsloth/gemma-4-E2B-it` → load với `use_exact_model_name=True`.
   - torch.compile của Unsloth làm backward đầu tiên lỗi (checkpoint recompute lệch graph, pytorch/pytorch#166926) → `no_compile: [gemma4-e2b]` trong config.
 - **Run `gemma4-e2b-r16-e1`:** 795 step trong 31.3 phút, kh early stop. Val loss 1.164 (step 100) → 0.941 (step 795), best ở step cuối. Kh so thẳng được với val loss của Qwen vì 2 model khác tokenizer; so ở Phase 5. Chưa chạy `gemma4-e2b-r16-e2`.
-- **Phase 6 cần để ý:** Unsloth báo template Gemma tạo double BOS và tự bỏ 1 cái lúc train. Parity test GGUF phải kiểm BOS.
+- **Phase 6 cần để ý:** Unsloth báo template Gemma tạo double BOS và tự bỏ 1 cái lúc train. Parity test GGUF phải kiểm BOS. → Đã kiểm ở Phase 6: llama-server cũng chỉ 1 BOS (mục 10.1).
 - **Môi trường:** dependency group `train` chỉ cài trên Linux (`uv sync --group train`). Đã pin unsloth 2026.10.10, kéo theo torch 2.14.1 (CUDA 13.0), transformers 5.17.0, trl 1.15.0, peft 0.21.2.
 - **Lệnh:**
   - `uv run --group train stylesync-train --exp qwen35-2b-r16-e1`
@@ -364,6 +364,14 @@ Task commit/comment kh có trong test set chat → chạy thêm trên `data/eval
    - giữ base GGUF + adapter GGUF riêng (`llama-server --lora`), train lại chỉ cần thay adapter. Mặc định chọn cách này khi đang iterate, merge khi chốt bản.
 2. **ONNX (phụ, để so ở Phase 0/5):** `python -m onnxruntime_genai.models.builder -m <merged_dir> -o models/onnx-int4 -p int4 -e cpu` (kiểm tra lại flag theo version đang dùng).
 3. **Parity test:** 50 mẫu test, greedy decode, so output PyTorch vs GGUF (và ONNX nếu có) bằng chrF hoặc embedding similarity. Lệch nhiều → nghi chat template/EOS sai (theo docs Unsloth đây là lỗi hay gặp nhất).
+
+**Đã làm (2026-11-01, `stylesync-export`, `reports/export.md`):**
+- **Build:** base `gemma-4-E2B-it-Q4_K_M.gguf` (bản Unsloth từ Phase 0) + `--lora stylesync-gemma4-e2b-r16-e1-lora-f16.gguf` (48MB, đủ 205 module LoRA, chỉ phần language). Convert bằng `convert_lora_to_gguf.py --base-model-id google/gemma-4-E2B-it` ngay trên laptop (chỉ tải config, kh cần bf16 10GB). venv converter phải lên transformers 5.17 (4.57 kh biết `gemma4`).
+- **Chat template:** template trong GGUF khác template HF/train chỉ ở phần tool-call; system/user render giống nhau.
+- **BOS:** llama-server bỏ `<bos>` khỏi template rồi tự thêm 1 cái → đúng 1 BOS như lúc train, 100% request (kiểm `prompt_n` = token của template có special, BOS đứng đầu đúng 1).
+- **Parity vs PyTorch bf16 (Phase 5 output cùng adapter):** chat 200 mẫu: trùng y chang 59% (Metal) / 57% (CPU), chrF 95.4 / 95.1, guard 96–97% (PyTorch 97%); owner 40 mẫu (mask): trùng 60% / 55%, chrF ~95, guard 100%. Kh câu nào chạm max_tokens, độ dài TB lệch < 1 ký tự. Metal và CPU trùng nhau 85% → phần lệch chủ yếu do base Q4_K_M + khác kernel, kh phải template/EOS. Chưa chấm judge cho output GGUF.
+- **Latency** (mỗi request prefill lại từ đầu, `cache_prompt` tắt): Metal 0.93s TB / 1.93s p90 (chat), 0.60s / 0.74s (owner), 45–48 tok/s; CPU 4 thread 2.69s / 4.48s (chat), 1.64s / 1.98s (owner), 30–32 tok/s. MCP bật cache nên gọi thật nhanh hơn. CPU đo trên M4, chưa đo x64 Windows/Linux.
+- **Còn lại (Phase 7):** MCP server tự spawn llama-server với `--lora`, dùng SYSTEM của train; model file để ở `platformdirs.user_cache_dir`; bản merge (1 file) để sau khi chốt.
 
 ### 10.2. Model server dùng chung: `llama-server`
 

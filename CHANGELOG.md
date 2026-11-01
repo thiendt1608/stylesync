@@ -38,6 +38,10 @@
   - `judge` scores meaning (1–5, added / lost flags) of every system's rewrites with gpt-6-luna, ignoring style;
   - `report` writes `reports/eval.md` with aggregates only: style classifier rate, stylometry, hard-token / placeholder / guard pass rates, judge scores, the plan's gate (the "added" flag rate is compared with the real messages' rate plus 3 points, since the judge flags 20% of them) and OpenAI cost. Good/bad examples and a 50-pair blind sheet stay private in `data/eval/`.
 - Phase 5 owner set (`stylesync-eval <cmd> --set owner`, `src/stylesync/eval/owner_set.py`, `reports/eval_owner.md`): the 40 owner-written commit/comment items run through the same systems, metrics and gate; only a commit's body is rewritten and compared, as in `rewrite_style`. The private sheet stays in `data/eval/`.
+- Phase 6 export (`uv run stylesync-export convert|parity|report`, `src/stylesync/export/`, `configs/export.yaml`):
+  - `convert` turns the chosen LoRA adapter into a LoRA GGUF with llama.cpp's converter, to load as `llama-server --lora` on top of the base Q4_K_M GGUF;
+  - `parity` starts its own llama-server (Metal or CPU), rewrites a fixed sample of the test set and the owner set greedily with the training prompt, and checks each request has exactly one BOS, as in training;
+  - `report` writes `reports/export.md`: agreement with the Phase 5 PyTorch outputs (exact, chrF), guard and hard-token rates, BOS, runaway rate and latency, aggregates only.
 - Phase 2 report (`reports/neutralize.md`): pilot v1 vs v2, full run 17,038 pairs from 8,769 bursts, real cost $1.06.
 
 ### Changed
