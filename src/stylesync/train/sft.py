@@ -22,15 +22,19 @@ from stylesync.clean.pipeline import read_jsonl
 TEMPLATE_KW = {"tokenize": False, "enable_thinking": False}
 
 
+def model_spec(cfg: dict, key: str) -> dict:
+    """What load_base needs to load one model of the config."""
+    return {"model": key, "model_id": cfg["models"][key], "max_seq_len": cfg["max_seq_len"],
+            "compile": key not in cfg.get("no_compile", [])}
+
+
 def experiment(cfg: dict, name: str) -> dict:
     """Merge one experiment's overrides into the shared settings."""
     if name not in cfg["experiments"]:
         raise SystemExit(f"unknown experiment {name!r}; known: {', '.join(cfg['experiments'])}")
     over = cfg["experiments"][name]
-    return {"name": name, "model": over["model"], "model_id": cfg["models"][over["model"]], "seed": cfg["seed"],
-            "max_seq_len": cfg["max_seq_len"], "compile": over["model"] not in cfg.get("no_compile", []),
-            "lora": cfg["lora"] | over.get("lora", {}),
-            "train": cfg["train"] | over.get("train", {})}
+    return {"name": name, "seed": cfg["seed"]} | model_spec(cfg, over["model"]) | {
+        "lora": cfg["lora"] | over.get("lora", {}), "train": cfg["train"] | over.get("train", {})}
 
 
 def render(tok, ex: dict) -> dict:
@@ -62,11 +66,23 @@ def git_commit(base: Path) -> str | None:
     return r.stdout.strip() or None
 
 
-def train(exp: dict, cfg: dict, base: Path, resume: bool, max_steps: int, limit: int | None) -> dict:
+def load_base(exp: dict):
+    """bf16 base model and its tokenizer, loaded the same way for training and eval generation."""
     # Heavy imports stay here so the rest of the package (and its tests) runs without a GPU stack.
     if not exp["compile"]:
         os.environ["UNSLOTH_COMPILE_DISABLE"] = "1"  # read when unsloth is imported
     import unsloth  # noqa: F401  (must be imported before transformers/trl to apply its patches)
+    from unsloth import FastModel
+
+    # use_exact_model_name: load the repo named in the config, not Unsloth's mirror of it (e.g. unsloth/gemma-4-E2B-it).
+    model, proc = FastModel.from_pretrained(model_name=exp["model_id"], max_seq_length=exp["max_seq_len"],
+                                            load_in_4bit=False, load_in_16bit=True, full_finetuning=False,
+                                            use_exact_model_name=True)
+    return model, getattr(proc, "tokenizer", proc)  # VLM checkpoints return a processor; text-only needs its tokenizer
+
+
+def train(exp: dict, cfg: dict, base: Path, resume: bool, max_steps: int, limit: int | None) -> dict:
+    model, tok = load_base(exp)
     from unsloth import FastModel
     import importlib.metadata as md
     from datasets import Dataset
@@ -80,11 +96,6 @@ def train(exp: dict, cfg: dict, base: Path, resume: bool, max_steps: int, limit:
         log.unlink(missing_ok=True)
     t, lora = exp["train"], exp["lora"]
 
-    # use_exact_model_name: train the repo named in the config, not Unsloth's mirror of it (e.g. unsloth/gemma-4-E2B-it).
-    model, proc = FastModel.from_pretrained(model_name=exp["model_id"], max_seq_length=exp["max_seq_len"],
-                                            load_in_4bit=False, load_in_16bit=True, full_finetuning=False,
-                                            use_exact_model_name=True)
-    tok = getattr(proc, "tokenizer", proc)  # VLM checkpoints return a processor; text-only training needs its tokenizer
     model = FastModel.get_peft_model(model, finetune_vision_layers=False, finetune_language_layers=True,
                                      finetune_attention_modules=True, finetune_mlp_modules=True,
                                      r=lora["r"], lora_alpha=lora["alpha"], lora_dropout=lora["dropout"], bias="none",

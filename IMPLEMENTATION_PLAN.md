@@ -330,7 +330,7 @@ Task commit/comment kh có trong test set chat → chạy thêm trên `data/eval
 | Metric | Cách đo | Ngưỡng gợi ý |
 |---|---|---|
 | **Đúng giọng (tự động)** | Train 1 classifier nhỏ (char n-gram + logistic regression) phân biệt "tin thật của m" vs "bản trung tính" trên train set. Đo % output bị classify là "của m" | ≥ 70% |
-| **Giữ ý** | LLM-judge (Claude) chấm 1–5 giữa input và output + cờ "thêm ý/mất ý" | trung bình ≥ 4.3, cờ bịa ≤ 3% |
+| **Giữ ý** | LLM-judge (gpt-6-luna) chấm 1–5 giữa input và output + cờ "thêm ý/mất ý" | trung bình ≥ 4.3, cờ bịa ≤ tỉ lệ của tin thật + 3% |
 | **Token cứng** | exact-match code/identifier/prefix conventional commit/trailer | 100% (fail thì guard chặn) |
 | **Stylometry** | độ lệch độ dài, tỉ lệ viết tắt, emoji, code-mix so với phân phối thật (5.3) | càng gần càng tốt, báo cáo số |
 | **Blind test** | 50 cặp (thật vs model) trộn ngẫu nhiên, m + 1–2 bạn đoán | tỉ lệ đoán đúng gần 50% là tốt |
@@ -339,6 +339,19 @@ Task commit/comment kh có trong test set chat → chạy thêm trên `data/eval
 **Gate:** model fine-tune phải thắng Baseline A ở "đúng giọng" và kh thua Baseline B quá xa ở "giữ ý". Nếu thua B ở cả hai → ghi kết quả vào README, cân nhắc chỉ dùng B (kh cần model local).
 
 **Deliverable:** `reports/eval.md` có bảng so sánh + 20 ví dụ đẹp/xấu.
+
+**Đã làm (2026-10-30 → 31):**
+- **Lệnh:** `uv run stylesync-eval gen --system <tên>` (GPU), `fewshot`, `judge`, `report`; config `configs/eval.yaml`. Baseline B và judge dùng **gpt-6-luna** qua OpenAI Batch (owner chốt thay Claude), data đã che PII như Phase 2. Judge cùng họ model với B nên có thể thiên vị B → coi meaning của B là cận trên.
+- **Gen:** 5 hệ thống local × 1,708 test, greedy, tổng ~20 phút trên 3060. Kh output rỗng, kh rác template.
+- **Kết quả:** cả 3 ft style 100% (bằng tin thật), base 6–16%, Baseline B 99%. Meaning: ft-gemma4-e2b-r16-e1 4.81 > ft-qwen e2 4.76 ≈ e1 4.75 > base-gemma 4.58 > base-qwen 4.14. ft-gemma đứng đầu (added 7%, lost 7%, ≤2 điểm 1%).
+- **Baseline B (gpt-6-luna few-shot):** meaning 4.90, added 4%, lost 3%, ≤2 điểm 1%. ft-gemma kém B 0.09 điểm (ngưỡng 0.3) → **cả 3 ft pass toàn bộ gate**. B nhỉnh hơn ở giữ ý nhưng judge cùng model với B nên có thể thiên vị; B cần gọi API mỗi lần, còn ft chạy local. Batch OpenAI có lúc nằm hàng đợi hàng giờ (B kẹt ~5 giờ ở 1,505/1,546, judge B 0/1,304 gần 3 giờ). Tổng chi phí OpenAI Phase 5: $0.53.
+- **Hiệu chuẩn judge:** tin thật so với input trung tính của nó bị gắn cờ "thêm ý" 20% (bản trung tính Phase 2 hay rớt chi tiết) → **owner chốt: ngưỡng added = tin thật + 3 điểm %**, kh phải 3% tuyệt đối. Cả 3 ft qua.
+- **Style classifier bão hoà** (ft = tin thật = 100%) → kh xếp hạng được giữa các ft, dựa vào stylometry + judge.
+- **Token cứng:** test chat chỉ 6 input có hard token (2 backtick đều giữ; 4 identifier do bản trung tính tự đặt, tin thật cũng kh có) → phải đo trên bộ commit/comment owner gõ.
+- **Blind test (owner tự chấm, 50 cặp ft-gemma vs tin thật):** đoán đúng 34/50 = 68%, đoán bừa ra ≥34 chỉ p ≈ 0.008 → owner vẫn phân biệt được, **chưa đạt** mục tiêu "gần 50%". Lưu ý: người chấm là chính chủ, có thể nhớ tin mình từng gửi, nên đây là bài khó nhất; nên cho thêm 1–2 bạn chấm.
+- **Bộ commit/comment owner (2026-10-31, `--set owner`, `reports/eval_owner.md`):** 40 mục (20 commit, 20 comment), bản trung tính đổi xưng hô sang anh/em theo mine. Commit chỉ đưa body vào model, prefix/trailer do code giữ (như `rewrite_style`). Cả 3 ft pass gate; meaning: ft-gemma 4.97, ft-qwen 4.9, B 5.0, tin owner 4.6. Chữ trong backtick/identifier giữ đủ 23/23 ở mọi ft. **Vấn đề: ft hay bỏ dấu backtick** (data chat gần như kh có backtick) → guard MCP pass chỉ 48% (ft-gemma), 72% (ft-qwen e1), 65% (e2), so với B 98%, base-gemma 82%; lý do fail gần như toàn bộ là "lost code span". Dùng thẳng qua MCP thì ~½ commit/comment rơi về bản trung tính. Style classifier (train trên chat) chấm bản của owner chỉ 20% → owner viết commit/comment ít "chat" hơn; stylometry ft vẫn sát bản owner (len 66 vs 67, abbrev 3–4% vs 3%), n = 40 nên mỗi mục = 2.5 điểm %.
+- **Che code span (2026-10-31, đã làm):** `rewrite_style` và `gen` (system `mask: true`) thay code span (inline + fenced) bằng `<CODE1>`, `<CODE2>`… trước khi đưa model, rồi gắn lại bằng code; guard từ chối slot model tự bịa. Kh cần train lại (lúc train model đã giữ placeholder 100%). Đo lại trên bộ owner: guard pass ft-gemma 48% → **100%**, ft-qwen e1 72% → 100%, e2 65% → 95%; meaning giữ nguyên (ft-gemma 4.97, lost 0%; ft-qwen e1 4.9, e2 4.92), cả 3 bản mask pass gate. → Phase 6 dùng ft-gemma4-e2b-r16-e1 + mask.
+- **Còn lại:** blind test vẫn chưa đạt (68%); làm tiếp ở Phase 6–7 hoặc khi có thêm data.
 
 ---
 

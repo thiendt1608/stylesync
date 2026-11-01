@@ -17,6 +17,10 @@ PREFIX = re.compile(r"^[a-z]+(\([^)]*\))?!?:\s*")
 TRAILER = re.compile(r"^[A-Za-z-]+: .+$")
 VN = re.compile(r"[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]")
 TASKS = ("message", "commit", "comment")
+# Fenced blocks first, then inline spans. The adapters copy <NAME>-style placeholders every time but drop
+# backticks (chat data has almost none), so code goes around the model as numbered placeholders.
+SPAN = re.compile(r"```.*?```|`[^`\n]+`", re.S)
+SLOT = re.compile(r"<CODE(\d+)>")
 
 mcp = MCPServer("stylesync")
 
@@ -25,14 +29,36 @@ def split_commit(text: str) -> tuple[str, str, str]:
     """Split a commit message into (conventional prefix, rewritable body, trailer block)."""
     lines = text.strip().splitlines()
     trailers: list[str] = []
-    while lines and TRAILER.match(lines[-1]):
-        trailers.insert(0, lines.pop())
+    # As in git, trailers are the last paragraph and need a blank line before them, so a one-line
+    # "refactor: ..." subject is never mistaken for a "Token: value" trailer.
+    blank = max((i for i, line in enumerate(lines) if not line.strip()), default=None)
+    if blank is not None and all(TRAILER.match(line) for line in lines[blank + 1:]):
+        trailers, lines = lines[blank + 1:], lines[:blank]
     while lines and not lines[-1].strip():
         lines.pop()
     body = "\n".join(lines)
     m = PREFIX.match(body)
     prefix = m.group(0) if m else ""
     return prefix, body[len(prefix):], "\n".join(trailers)
+
+
+def mask(text: str) -> tuple[str, list[str]]:
+    """Swap each code span for <CODE1>, <CODE2>, ...; returns the masked text and the spans in order.
+    A text that already holds such a token is left as it is, so unmask can never misplace a span."""
+    if SLOT.search(text):
+        return text, []
+    spans: list[str] = []
+
+    def slot(m: re.Match) -> str:
+        spans.append(m.group(0))
+        return f"<CODE{len(spans)}>"
+
+    return SPAN.sub(slot, text), spans
+
+
+def unmask(text: str, spans: list[str]) -> str:
+    """Put the spans back; a slot number the model made up stays, and the guard rejects it."""
+    return SLOT.sub(lambda m: spans[int(m.group(1)) - 1] if 0 < int(m.group(1)) <= len(spans) else m.group(0), text)
 
 
 def guard(source: str, output: str) -> list[str]:
@@ -51,7 +77,7 @@ def guard(source: str, output: str) -> list[str]:
     # short casual replies ("fix `x` r nha") legitimately have none.
     if VN.search(source.lower()) and not VN.search(output.lower()) and len(output.split()) >= 6:
         problems.append("Vietnamese lost (no diacritics in output)")
-    if re.search(r"<(NAME|PHONE|EMAIL)>", output):
+    if re.search(r"<(NAME|PHONE|EMAIL|CODE\d+)>", output):
         problems.append("placeholder leaked")
     ratio = len(output) / max(len(source), 1)
     if not 0.3 <= ratio <= 2.5:
@@ -87,8 +113,9 @@ def rewrite_style(text: str, task: str = "message") -> dict:
     if task not in TASKS:
         task = "message"
     prefix, core, trailers = split_commit(text) if task == "commit" else ("", text.strip(), "")
+    masked, spans = mask(core)
     try:
-        rewritten = _generate(core, task)
+        rewritten = unmask(_generate(masked, task), spans)
     except (httpx.HTTPError, KeyError, IndexError) as e:
         return {"text": text, "guard_passed": False, "warnings": [f"local model unavailable: {e}"]}
     problems = guard(core, rewritten)

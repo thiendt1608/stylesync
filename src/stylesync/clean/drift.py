@@ -38,20 +38,20 @@ def by_quarter(rows: list[dict]) -> list[dict]:
     acc: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
         acc[quarter(r["ts"])].append(text_metrics(r["text"]))
-    out = []
-    for q in sorted(acc):
-        ms = acc[q]
-        words = max(sum(m["words"] for m in ms), 1)
-        out.append({
-            "quarter": q,
-            "n": len(ms),
-            "mean_len": round(sum(m["len"] for m in ms) / len(ms), 1),
-            "abbrev": round(sum(m["abbrev"] for m in ms) / words, 3),
-            "diacritics": round(sum(m["diacritic_words"] for m in ms) / words, 3),
-            "emoticon": round(sum(m["emoticon"] for m in ms) / len(ms), 3),
-            "codemix": round(sum(m["english"] for m in ms) / words, 3),
-        })
-    return out
+    return [{"quarter": q} | rates(acc[q]) for q in sorted(acc)]
+
+
+def rates(ms: list[dict]) -> dict:
+    """METRICS over a group of text_metrics(): word shares for abbrev/diacritics/codemix, burst share for emoticon."""
+    n, words = max(len(ms), 1), max(sum(m["words"] for m in ms), 1)
+    return {
+        "n": len(ms),
+        "mean_len": round(sum(m["len"] for m in ms) / n, 1),
+        "abbrev": round(sum(m["abbrev"] for m in ms) / words, 3),
+        "diacritics": round(sum(m["diacritic_words"] for m in ms) / words, 3),
+        "emoticon": round(sum(m["emoticon"] for m in ms) / n, 3),
+        "codemix": round(sum(m["english"] for m in ms) / words, 3),
+    }
 
 
 def to_svg(rows: list[dict], title: str, min_n: int = 30) -> str:

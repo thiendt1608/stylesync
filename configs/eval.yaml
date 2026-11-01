@@ -1,0 +1,55 @@
+# Phase 5 eval settings (plan section 9). Paths are relative to the repo root.
+train_config: configs/train.yaml     # model ids, max_seq_len, no_compile
+train: data/processed/splits/train.jsonl
+test: data/processed/splits/test.jsonl
+# <system>.jsonl with {id, output}. Local systems are generated on the GPU box and copied here.
+outputs_dir: data/eval/outputs
+gen:
+  batch_size: 32
+  max_new_tokens: 256               # longest test reply is well under this (reports/dataset.md)
+# Baseline A: the base model zero-shot, told what the voice looks like (the Phase 0 MCP prompt).
+base_system: >-
+  Bạn là bộ viết lại văn phong. Viết lại đoạn văn của người dùng theo giọng nhắn tin thân mật
+  kiểu Gen Z Việt Nam: câu ngắn, dùng viết tắt phổ biến (kh, đc, z, nma, bt, ng, mn, vd),
+  thuật ngữ kỹ thuật giữ tiếng Anh. Giữ NGUYÊN ý, không thêm, không bớt.
+  Giữ nguyên mọi nội dung trong dấu backtick. Chỉ trả về bản viết lại, không giải thích.
+# Local systems. No adapter = Baseline A (base_system prompt); with adapter = the training prompt.
+systems:
+  base-qwen35-2b: {model: qwen35-2b}
+  base-gemma4-e2b: {model: gemma4-e2b}
+  ft-qwen35-2b-r16-e1: {model: qwen35-2b, adapter: runs/qwen35-2b-r16-e1/adapter}
+  ft-qwen35-2b-r16-e2: {model: qwen35-2b, adapter: runs/qwen35-2b-r16-e2/adapter}
+  ft-gemma4-e2b-r16-e1: {model: gemma4-e2b, adapter: runs/gemma4-e2b-r16-e1/adapter}
+# Baseline B: the LLM below with the k most similar train pairs (char n-gram TF-IDF) as examples.
+fewshot: {name: fewshot-gpt6luna, k: 10}
+# OpenAI Batch, same runner as Phase 2, for Baseline B and the meaning judge. Key comes from OPENAI_API_KEY.
+llm:
+  model: gpt-6-luna
+  effort: low
+  max_output_tokens: 2048
+  prompt_version: v1               # part of the cache key: bump when a prompt changes
+  poll_s: 300
+  # USD per 1M tokens, gpt-6-luna Batch rates, https://developers.openai.com/api/docs/pricing (2026-10-27).
+  price: {input: 0.05, cached_input: 0.005, output: 0.25}
+  out: {cache: data/eval/llm_cache.jsonl, batches: data/eval/llm_batches.jsonl}
+# Plan section 9. A fine-tuned model passes when it beats its own base on style and its judge mean is
+# at most max_meaning_gap below Baseline B. style and meaning are the plan's suggested floors. The judge flags
+# 20% of the owner's real messages as adding information (the neutral inputs drop details), so the plan's 3%
+# is a margin over the reference row's rate, not an absolute ceiling (owner, 2026-10-30).
+gate: {style: 0.70, meaning: 4.3, added_over_reference: 0.03, max_meaning_gap: 0.3}
+blind: {n: 50, seed: 7}
+# `--set owner`: the owner-written commit/comment set (plan section 9). The private sheet is turned into
+# test rows at `test` on every run where it exists (the GPU box only gets the rows); everything below
+# replaces the chat-set key of the same name. No blind sheet: the owner wrote both sides.
+owner_set:
+  sheet: data/eval/owner_commit_comment.md
+  test: data/eval/owner/test.jsonl
+  outputs_dir: data/eval/owner/outputs
+  report: reports/eval_owner.md
+  # Same adapters with code spans masked as <CODEn> around the model (rewrite_style does this): the
+  # adapters keep the text of a span but drop its backticks, which the MCP guard rejects.
+  systems:
+    ft-qwen35-2b-r16-e1-mask: {model: qwen35-2b, adapter: runs/qwen35-2b-r16-e1/adapter, mask: true}
+    ft-qwen35-2b-r16-e2-mask: {model: qwen35-2b, adapter: runs/qwen35-2b-r16-e2/adapter, mask: true}
+    ft-gemma4-e2b-r16-e1-mask: {model: gemma4-e2b, adapter: runs/gemma4-e2b-r16-e1/adapter, mask: true}
+report: reports/eval.md             # aggregates only; examples and the blind sheet stay under data/eval/

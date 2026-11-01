@@ -206,3 +206,25 @@ def test_build_marks_refusal_and_review(tmp_path):
     assert stats["reject_reasons"] == {"refusal": 1} and stats["missing"] == 1
     sheet = run.review(cfg, tmp_path, n=100).read_text(encoding="utf-8")
     assert sheet.count("## m00001-") == 2
+
+
+def test_collect_no_wait_skips_open_batches_and_retries_dropped_connections(tmp_path):
+    import httpx
+    import openai
+
+    cfg, client = setup(tmp_path)
+    run.submit(client, cfg, tmp_path, ROWS)
+    assert run.collect(client, cfg, tmp_path, poll_s=0, wait=False) == {}  # first poll says in_progress
+    assert not (tmp_path / cfg["out"]["cache"]).exists()
+
+    real, drops = client.batches.retrieve, []
+
+    def flaky(bid):
+        if not drops:
+            drops.append(bid)
+            raise openai.APIConnectionError(request=httpx.Request("GET", "https://api.openai.com"))
+        return real(bid)
+
+    client.batches.retrieve = flaky
+    assert run.collect(client, cfg, tmp_path, poll_s=0) == {"succeeded": 2, "batch_expired": 1}
+    assert drops == ["batch_1"]

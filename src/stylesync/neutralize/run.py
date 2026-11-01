@@ -59,19 +59,20 @@ def append_jsonl(path: Path, rows: list[dict]) -> None:
 
 def submit(client, cfg: dict, base: Path, rows: list[dict]) -> str | None:
     """One request per unique text that is neither cached nor waiting in an open batch."""
+    return submit_bodies(client, cfg, base, {key_of(cfg, r): request(cfg, r["text"]) for r in rows})
+
+
+def submit_bodies(client, cfg: dict, base: Path, bodies: dict[str, dict]) -> str | None:
+    """Send the Responses API bodies whose key is neither cached nor waiting in an open batch."""
     cache = read_cache(cfg, base)
     pending = {k for b in batch_state(cfg, base).values() if not b.get("done") for k in b["keys"]}
-    todo = {}
-    for r in rows:
-        k = key_of(cfg, r)
-        if k not in cache and k not in pending:
-            todo[k] = r["text"]
+    todo = {k: body for k, body in bodies.items() if k not in cache and k not in pending}
     if not todo:
         return None
     # The upload copy is local only for the moment it takes to send it.
     path = (base / cfg["out"]["batches"]).with_name("upload.jsonl")
-    write_jsonl(path, [{"custom_id": k, "method": "POST", "url": "/v1/responses", "body": request(cfg, t)}
-                       for k, t in todo.items()])
+    write_jsonl(path, [{"custom_id": k, "method": "POST", "url": "/v1/responses", "body": body}
+                       for k, body in todo.items()])
     with path.open("rb") as f:
         upload = client.files.create(file=f, purpose="batch")
     path.unlink()
@@ -81,8 +82,15 @@ def submit(client, cfg: dict, base: Path, rows: list[dict]) -> str | None:
     return batch.id
 
 
-def parse(line: dict) -> dict | None:
-    """Cache entry for one output-file line. Failed requests stay uncached so the next submit retries them."""
+def variants(d: dict) -> dict | None:
+    """Decoded neutralize output: both variants as strings, else None."""
+    return {v: d[v].strip() for v in VARIANTS} if all(isinstance(d.get(v), str) for v in VARIANTS) else None
+
+
+def parse(line: dict, decode=variants) -> dict | None:
+    """Cache entry for one output-file line. Failed requests stay uncached so the next submit retries them.
+
+    `decode` turns the JSON reply into the cached `out` (None when it does not fit the expected shape)."""
     resp = line.get("response")
     if line.get("error") or not resp or resp.get("status_code") != 200:
         return None
@@ -98,8 +106,7 @@ def parse(line: dict) -> dict | None:
     if stop == "completed":
         try:
             d = json.loads("".join(c["text"] for c in parts if c.get("type") == "output_text"))
-            if all(isinstance(d.get(v), str) for v in VARIANTS):
-                out = {v: d[v].strip() for v in VARIANTS}
+            out = decode(d) if isinstance(d, dict) else None
         except ValueError:
             pass
     u = body.get("usage") or {}
@@ -116,8 +123,21 @@ def file_lines(client, file_id: str | None) -> list[dict]:
     return [json.loads(x) for x in client.files.content(file_id).text.split("\n") if x.strip()]
 
 
-def collect(client, cfg: dict, base: Path, poll_s: float | None = None) -> Counter:
+def retrieve(client, bid: str, poll_s: float):
+    """Batch status; a dropped connection (laptop asleep, Wi-Fi) is retried instead of ending the wait."""
+    import openai
+
+    while True:
+        try:
+            return client.batches.retrieve(bid)
+        except openai.APIConnectionError as e:
+            print(f"{bid}: {e}, retrying", flush=True)
+            time.sleep(poll_s)
+
+
+def collect(client, cfg: dict, base: Path, poll_s: float | None = None, decode=variants, wait: bool = True) -> Counter:
     """Wait for every open batch, cache its results, delete its files on OpenAI, mark it done.
+    With wait=False, only collect the batches that have already ended.
 
     Safe to rerun after a crash: a batch is only marked done after its results are cached.
     """
@@ -126,14 +146,18 @@ def collect(client, cfg: dict, base: Path, poll_s: float | None = None) -> Count
     for bid, b in batch_state(cfg, base).items():
         if b.get("done"):
             continue
-        while (info := client.batches.retrieve(bid)).status not in DONE:
+        while (info := retrieve(client, bid, poll_s)).status not in DONE:
+            if not wait:
+                break
             rc = info.request_counts
             print(f"{bid}: {info.status}, {rc.completed if rc else 0}/{rc.total if rc else '?'} done", flush=True)
             time.sleep(poll_s)
+        if info.status not in DONE:
+            continue
         counts: Counter = Counter()
         entries = []
         for line in file_lines(client, info.output_file_id) + file_lines(client, info.error_file_id):
-            e = parse(line)
+            e = parse(line, decode)
             counts["succeeded" if e else (line.get("error") or {}).get("code") or "errored"] += 1
             if e is not None:
                 entries.append(e | {"model": cfg["model"], "prompt_version": cfg["prompt_version"]})

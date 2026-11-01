@@ -17,6 +17,11 @@ spike = [
 ]
 dev = [
     "pytest>=8",
+    {include-group = "eval"},
+]
+# Phase 5 eval: style classifier and few-shot retrieval.
+eval = [
+    "scikit-learn>=1.5",
 ]
 # Phase 4 training: CUDA GPU on Linux/WSL2 only (3060 or Colab). `uv sync --group train` there.
 train = [
@@ -30,6 +35,7 @@ stylesync-data = "stylesync.clean.pipeline:main"
 stylesync-neutralize = "stylesync.neutralize.run:main"
 stylesync-dataset = "stylesync.dataset.build:main"
 stylesync-train = "stylesync.train.sft:main"
+stylesync-eval = "stylesync.eval.run:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
