@@ -72,6 +72,18 @@ def test_status_silent_after_a_day_and_latest_feedback_wins():
     assert history.entries(recs, at)[1]["status"] == "dropped"
 
 
+def test_commit_feedback_is_compared_without_trailers():
+    out = "fix(api): sửa null r\n\nCo-Authored-By: X <x@example.com>"
+    rec = {"type": "rewrite", "id": "a", "ts": "2026-11-01T00:00:00+00:00", "task": "commit", "draft": "d",
+           "output": out}
+    same = [rec, {"type": "feedback", "id": "a", "final": "fix(api): sửa null r", "by": "agent"}]
+    other = [rec, {"type": "feedback", "id": "a", "final": "fix(api): fix null\n\nCo-Authored-By: X <x@example.com>",
+                   "by": "agent"}]
+    assert history.entries(same)[0]["status"] == "accepted"
+    assert history.entries(other)[0]["status"] == "corrected"
+    assert history.entries([{**rec, "task": "comment"}, same[1]])[0]["status"] == "corrected"
+
+
 def test_read_skips_a_cut_off_line_and_keeps_line_separators(tmp_path):
     p = tmp_path / "h.jsonl"
     history.append({"type": "rewrite", "id": "a", "text": "dòng 1 dòng 2"}, p)

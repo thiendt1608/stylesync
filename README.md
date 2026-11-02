@@ -102,10 +102,10 @@ The tool description alone is not enough for Claude Code to call a deferred MCP 
   (xưng anh/em như t, kh dùng tôi/bạn; code, path, identifier để trong backtick), gọi
   `mcp__stylesync__rewrite_style` (task: commit | comment | message) và dùng nguyên văn `text` trả về.
 - `guard_passed: false` → dùng `text` (bản trung tính) và báo t lý do trong `warnings`.
-- T chê bản viết lại ("viết lại", "kh giống t", "bỏ chữ X"…): sửa tay theo ý t, kh gọi lại `rewrite_style`
-  (ra y chang). T chốt bản nào thì gọi `mcp__stylesync__rewrite_feedback` (`id` của lần rewrite, `final_text` =
-  nguyên văn bản chốt, `by`: `owner` nếu t tự gõ, `agent` nếu m sửa theo lời t). T nói ok luôn → gọi với
-  `final_text` rỗng; t kh nói gì thì thôi.
+- T chê bản viết lại ("viết lại", "kh giống t", "bỏ chữ X"…) hoặc tự gõ bản khác: sửa tay theo ý t (kh gọi
+  lại `rewrite_style`, ra y chang), dùng bản mới, rồi gọi ngay `mcp__stylesync__rewrite_feedback` (`id` của lần
+  rewrite, `final_text` = nguyên văn bản mới đầy đủ, `by`: `owner` nếu t gõ nguyên câu, `agent` nếu m sửa theo
+  lời t). Mỗi lần sửa tiếp lại gọi với bản mới nhất. T nói ok luôn → gọi với `final_text` rỗng; t kh nói gì thì thôi.
 - Tin gửi người thật: đưa t xem trước, kh tự gửi.
 ```
 

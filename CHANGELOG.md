@@ -60,6 +60,7 @@
 - `rewrite_style` sends code spans (inline and fenced) to the model as `<CODE1>`, `<CODE2>`… and puts them back after, since the adapters keep a span's text but drop its backticks; the guard rejects a slot the model made up. On the owner set the guard pass rate goes from 48% to 100% (ft-gemma4-e2b-r16-e1) with meaning unchanged (4.97); `stylesync-eval gen` does the same for systems with `mask: true`.
 - `rewrite_style` sends the training system prompt and decodes greedily, as in eval and parity, instead of a descriptive prompt; the guard also rejects a new email, URL or phone number, and a backend failure returns the neutral text with a warning. `health` reports the adapter, model files, last latency and whether this session started the server.
 - Train a single voice: no casual/work tone tag in the data pipeline, dataset or `rewrite_style` (work-style data was 8 of 8,769 samples). `configs/threads.yaml` keeps only `include`.
+- The agent rule and the `rewrite_feedback` docstring now ask for a call right after each change the owner asked for (the latest wins), not when the owner settles, so a correction is kept when the owner says nothing afterwards.
 
 ### Fixed
 - `rewrite_style` no longer treats a one-line commit such as `refactor: ...` as a trailer and rewrites an empty body: trailers must be the last paragraph, after a blank line, as in git.
@@ -70,3 +71,4 @@
 - A llama-server that exits at start-up (a broken model file, say) is reported at once instead of after 30 seconds, unless another session's server is still loading on the port.
 - Guard rejects a rewrite of a draft of 20+ words that keeps less than a quarter of its character trigrams, so a rewrite that drops most of the draft falls back to the neutral text.
 - `stylesync-eval report` no longer overwrites a blind sheet the owner has started answering.
+- `rewrite_feedback` compares a commit by its subject and body, without trailers, so a commit the agent saved without its `Co-Authored-By` line no longer counts as corrected.

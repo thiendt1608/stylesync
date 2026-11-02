@@ -87,12 +87,23 @@ def record_review(rid: str, action: str, p: Path) -> None:
     append({"type": "review", "id": rid, "ts": now(), "action": action}, p)
 
 
+def _comparable(task: str | None, text: str) -> str:
+    """A commit is compared without its trailers: agents often leave Co-Authored-By out of the final text, and
+    retraining uses the body only."""
+    if task == "commit":
+        from stylesync.mcp_server import split_commit  # mcp_server imports this module
+        prefix, body, _ = split_commit(text)
+        text = prefix + body
+    return text.strip()
+
+
 def status(e: dict, at: datetime) -> str:
     """pending | accepted (owner said fine) | silent (no word for 24h) | corrected | dropped (in review)."""
     if e["review"] == "drop":
         return "dropped"
     if e["final"] is not None:
-        return "accepted" if e["final"].strip() == e["output"].strip() else "corrected"
+        same = _comparable(e.get("task"), e["final"]) == _comparable(e.get("task"), e["output"])
+        return "accepted" if same else "corrected"
     return "silent" if at - datetime.fromisoformat(e["ts"]) >= SILENT_ACCEPT else "pending"
 
 

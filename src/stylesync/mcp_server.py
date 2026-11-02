@@ -179,15 +179,16 @@ def rewrite_style(text: str, task: str = "message") -> dict:
 
 @mcp.tool()
 def rewrite_feedback(id: str, final_text: str = "", by: str = "agent") -> dict:
-    """Save the text the owner settled on for an earlier rewrite_style result; it becomes training data.
+    """Save the owner's version of an earlier rewrite_style result; it becomes training data.
 
-    Call it once the owner has approved a version after asking to change a rewrite: `id` is the
-    one rewrite_style returned, `final_text` the exact approved text (the whole commit message,
-    comment or message), `by` is "owner" when the owner typed that text and "agent" when you
-    edited it on the owner's instructions. Call it with an empty `final_text` when the owner
-    says the rewrite is fine as is. With no feedback a rewrite counts as accepted after 24
-    hours. To fix a rewrite, edit it yourself as the owner asks: calling rewrite_style again
-    returns the same text (decoding is greedy).
+    Call it right after you apply a change the owner asked for to a rewrite, and again after
+    each further change (the latest wins): `id` is the one rewrite_style returned, `final_text`
+    the exact new text in full (the whole commit message, comment or message), `by` is "owner"
+    when the owner typed that text and "agent" when you edited it on the owner's instructions.
+    Call it with an empty `final_text` when the owner says the rewrite is fine as is; when the
+    owner says nothing, do not call it (it counts as accepted after 24 hours). To fix a
+    rewrite, edit it yourself as the owner asks: calling rewrite_style again returns the same
+    text (decoding is greedy).
     """
     try:
         return {"saved": True, "status": history.record_feedback(id, final_text, by), "warnings": []}
