@@ -452,6 +452,37 @@ stylesync commit                 # đọc git diff --staged → Claude API viế
 - GitHub Actions matrix `ubuntu-latest`, `macos-latest`, `windows-latest`: lint + unit + integration. Smoke test inference với Qwen3.5-0.8B GGUF chỉ chạy khi trigger tay (`workflow_dispatch`) vì tốn phút.
 - `CHANGELOG.md` + conventional commits từ commit đầu.
 
+### 10.6. Phase 8: lịch sử dùng + feedback để train tiếp
+
+Mục tiêu: gom những câu owner sửa lại bản viết lại để train tiếp. Data này đúng phân phối thật: bản nháp do agent viết, kh phải bản back-translate ở Phase 2.
+
+- **Ghi log (2026-11-02):** mỗi lần `rewrite_style` có bản tiếng Việt để owner chấm (kể cả lúc guard/backend trả bản trung tính) thì ghi 1 dòng `rewrite` vào `history.jsonl` trong `platformdirs.user_data_dir("stylesync")`.
+  - File append-only, quyền 600, nằm ngoài repo.
+  - Bản rỗng, chỉ có code hay tiếng Anh thì kh ghi.
+  - Tool trả thêm `id`.
+  - `STYLESYNC_HISTORY` đổi path; `off` thì tắt.
+- **Feedback:** tool `rewrite_feedback(id, final_text, by)` ghi bản owner chốt.
+  - `by`: `owner` = owner tự gõ (vàng); `agent` = agent sửa theo lời owner, vẫn là giọng Claude bắt chước nên kém hơn.
+  - `final_text` rỗng = owner nói ok.
+  - Kh feedback sau 24h = `silent` (tính là dùng nguyên).
+  - Trạng thái: `pending | accepted | silent | corrected | dropped`.
+  - Rule `## stylesync` (Claude Code + omp) dặn agent: owner chê thì sửa tay (gọi lại `rewrite_style` ra y chang vì greedy), owner chốt thì gọi `rewrite_feedback`.
+- **CLI `stylesync-feedback`:**
+  - `stats`: số theo trạng thái, tỉ lệ bị sửa, tiến độ /500.
+  - `review`: owner duyệt từng câu sửa, drop câu bậy.
+  - `export`: ra `data/processed/feedback.jsonl`, cùng format pair Phase 2 + `rejected` (output model, để DPO sau):
+    - commit chỉ lấy body;
+    - code thành `<CODEn>` như lúc chạy thật;
+    - tách theo đoạn khi số đoạn khớp;
+    - scrub PII bằng pattern (tên người kh biết nên kh scrub tên);
+    - mặc định chỉ lấy `corrected`, `--accepted` lấy thêm câu dùng nguyên mà khác bản nháp.
+- **Train tiếp (khi đủ ~500 `corrected`, thử sớm ở ~200):** chưa làm.
+  - Dataset builder thêm nguồn `feedback`, trọng số ×2–3, trộn với train cũ để kh quên giọng.
+  - Train lại trên PC rồi giữ ~50 câu sửa mới nhất làm test.
+  - So adapter cũ/mới: chrF với bản chốt, judge giữ nghĩa, guard, test set cũ kh tụt.
+  - Pass thì convert GGUF + `install`.
+  - `silent` là tín hiệu yếu (commit hay kh đọc), chủ yếu để đo tỉ lệ bị sửa theo thời gian.
+
 ---
 
 ## 11. Rủi ro & cách chặn

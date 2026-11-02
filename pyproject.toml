@@ -41,6 +41,7 @@ stylesync-dataset = "stylesync.dataset.build:main"
 stylesync-train = "stylesync.train.sft:main"
 stylesync-eval = "stylesync.eval.run:main"
 stylesync-export = "stylesync.export.parity:main"
+stylesync-feedback = "stylesync.feedback:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

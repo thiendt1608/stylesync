@@ -49,6 +49,9 @@
 - omp setup: `integrations/omp/` holds a `stylesync` skill and an `AGENTS.md` rule so omp calls `rewrite_style` before a commit, a comment or a message; README shows the `mcp.json` entry.
 - MIT `LICENSE`, and a README for readers outside the project: what stylesync is, the reference run's results, the layout, and how to train your own voice step by step.
 - `reports/project_report.md`: one Vietnamese report of the whole project, Phase 0 to omp (results, costs, privacy, decisions, what is not verified); aggregates only.
+- Usage history for retraining (`src/stylesync/history.py`): every `rewrite_style` call that gives the owner a Vietnamese text to judge is appended to `history.jsonl` in `platformdirs.user_data_dir("stylesync")` (owner-only, outside the repo), and the result carries its `id`. `STYLESYNC_HISTORY` moves the file or turns logging `off`.
+- MCP tool `rewrite_feedback(id, final_text, by)`: saves the text the owner settled on after asking to change a rewrite (`by`: owner typed it, or the agent edited it on the owner's instructions); an empty `final_text` means the rewrite was fine, and no feedback for 24 hours counts as used as is. The Claude Code and omp rules tell the agent when to call it.
+- `uv run stylesync-feedback stats | review | export`: counts and correction rate, a terminal review that drops bad corrections, and PII-scrubbed training pairs in `data/processed/feedback.jsonl` (commit body only, code spans as `<CODEn>`, plus the model's rejected output).
 
 ### Changed
 - Phase 2 provider: OpenAI gpt-6-luna Batch instead of Claude Haiku 5.5 Batch.

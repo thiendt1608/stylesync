@@ -1,7 +1,8 @@
-"""stylesync MCP server (plan section 10.3): tools rewrite_style and health over stdio.
+"""stylesync MCP server (plan section 10.3): tools rewrite_style, rewrite_feedback and health over stdio.
 
 A thin layer over the shared llama-server (`stylesync.llama`): the conventional-commit prefix, trailers and code
 spans are handled here in code, the model only rewrites the rest, and a guard falls back to the neutral text.
+Each rewrite and the text the owner settled on go to the usage history (`stylesync.history`) for retraining.
 """
 import re
 from collections import Counter
@@ -9,7 +10,7 @@ from collections import Counter
 import httpx
 from mcp.server.mcpserver import MCPServer
 
-from stylesync import llama
+from stylesync import history, llama
 # The training system prompt: the adapter was trained with it (Phase 3) and evaluated with it (Phase 5-6).
 from stylesync.dataset.build import SYSTEM
 PREFIX = re.compile(r"^[a-z]+(\([^)]*\))?!?:\s*")
@@ -132,6 +133,11 @@ def _rewrite_paragraphs(masked: str, subject: bool) -> str:
     return "\n\n".join(p for p in out if p)
 
 
+def _logged(task: str, draft: str, result: dict) -> dict:
+    result["id"] = history.log_rewrite(task, draft, result["text"], result["guard_passed"], result["warnings"])
+    return result
+
+
 @mcp.tool()
 def rewrite_style(text: str, task: str = "message") -> dict:
     """Rewrite a neutral Vietnamese draft into the owner's own voice (casual, abbreviations, Gen Z).
@@ -143,7 +149,7 @@ def rewrite_style(text: str, task: str = "message") -> dict:
     `type(scope):` prefix and trailers are kept by code. Use the returned `text` VERBATIM: do
     not fix spelling, abbreviations or tone. If `guard_passed` is false, `text` is the neutral
     draft; use it and tell the owner why (`warnings`). Never send a message to another person
-    without the owner seeing it first.
+    without the owner seeing it first. Keep the returned `id` for rewrite_feedback.
     """
     if task not in TASKS:
         task = "message"
@@ -151,22 +157,42 @@ def rewrite_style(text: str, task: str = "message") -> dict:
     masked, spans = mask(core.replace("\r\n", "\n"))
     prose = SLOT.sub("", masked)
     if not core.strip():
-        return {"text": text, "guard_passed": False, "warnings": ["empty draft: nothing to rewrite"]}
+        return {"text": text, "guard_passed": False, "warnings": ["empty draft: nothing to rewrite"], "id": None}
     if not prose.strip():  # only code: already final
-        return {"text": text, "guard_passed": True, "warnings": []}
+        return {"text": text, "guard_passed": True, "warnings": [], "id": None}
     if not VN.search(prose.lower()) and len(prose.split()) >= 4:
-        return {"text": text, "guard_passed": False, "warnings": ["draft is not Vietnamese: left unchanged"]}
+        return {"text": text, "guard_passed": False, "warnings": ["draft is not Vietnamese: left unchanged"], "id": None}
+    # From here on the owner gets a Vietnamese text to judge, so the call goes to the history even when the
+    # neutral draft comes back: a correction of it is as good a training pair as a correction of a rewrite.
     try:
         rewritten = unmask(_rewrite_paragraphs(masked, subject=task == "commit"), spans)
     except llama.Truncated as e:
-        return {"text": text, "guard_passed": False, "warnings": [f"rewrite incomplete: {e}"]}
+        return _logged(task, text, {"text": text, "guard_passed": False, "warnings": [f"rewrite incomplete: {e}"]})
     except (llama.BackendError, httpx.HTTPError, KeyError, IndexError) as e:
-        return {"text": text, "guard_passed": False, "warnings": [f"local model unavailable: {e}"]}
+        return _logged(task, text, {"text": text, "guard_passed": False, "warnings": [f"local model unavailable: {e}"]})
     problems = guard(core, rewritten)
     if problems:
-        return {"text": text, "guard_passed": False, "warnings": problems}
+        return _logged(task, text, {"text": text, "guard_passed": False, "warnings": problems})
     result = prefix + rewritten + (f"\n\n{trailers}" if trailers else "")
-    return {"text": result, "guard_passed": True, "warnings": []}
+    return _logged(task, text, {"text": result, "guard_passed": True, "warnings": []})
+
+
+@mcp.tool()
+def rewrite_feedback(id: str, final_text: str = "", by: str = "agent") -> dict:
+    """Save the text the owner settled on for an earlier rewrite_style result; it becomes training data.
+
+    Call it once the owner has approved a version after asking to change a rewrite: `id` is the
+    one rewrite_style returned, `final_text` the exact approved text (the whole commit message,
+    comment or message), `by` is "owner" when the owner typed that text and "agent" when you
+    edited it on the owner's instructions. Call it with an empty `final_text` when the owner
+    says the rewrite is fine as is. With no feedback a rewrite counts as accepted after 24
+    hours. To fix a rewrite, edit it yourself as the owner asks: calling rewrite_style again
+    returns the same text (decoding is greedy).
+    """
+    try:
+        return {"saved": True, "status": history.record_feedback(id, final_text, by), "warnings": []}
+    except (LookupError, OSError) as e:
+        return {"saved": False, "status": None, "warnings": [str(e)]}
 
 
 @mcp.tool()
@@ -177,7 +203,7 @@ def health() -> dict:
         ok = llama.healthy(client)
         adapter = ok and llama.adapter_loaded(client, s)
     return {"backend": s.url, "ok": ok, "adapter_loaded": adapter, "base": str(s.base), "lora": str(s.lora),
-            "model_files_present": s.base.is_file() and s.lora.is_file(), **STATE}
+            "model_files_present": s.base.is_file() and s.lora.is_file(), "history": str(history.path()), **STATE}
 
 
 def main() -> None:

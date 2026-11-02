@@ -42,7 +42,8 @@ Full write-up (Vietnamese): `reports/project_report.md`. Plan and design notes: 
 | `src/stylesync/train/` | Phase 4: LoRA SFT with Unsloth + TRL (CUDA, Linux/WSL2) |
 | `src/stylesync/eval/` | Phase 5: style classifier, stylometry, LLM judge, gate |
 | `src/stylesync/export/` | Phase 6: LoRA → GGUF, parity against PyTorch, install |
-| `src/stylesync/mcp_server.py`, `llama.py` | Phase 7: MCP tools `rewrite_style` and `health`, shared llama-server backend |
+| `src/stylesync/mcp_server.py`, `llama.py` | Phase 7: MCP tools `rewrite_style`, `rewrite_feedback` and `health`, shared llama-server backend |
+| `src/stylesync/history.py`, `feedback.py` | Usage history and the owner's corrections, exported as training pairs |
 | `configs/` | One YAML per phase; `threads.example.yaml` shows the shape of the generated thread list |
 | `integrations/omp/` | omp skill and `AGENTS.md` rule |
 | `spike/phase0/` | Model/runtime benchmark with 40 synthetic sentences |
@@ -101,10 +102,30 @@ The tool description alone is not enough for Claude Code to call a deferred MCP 
   (xưng anh/em như t, kh dùng tôi/bạn; code, path, identifier để trong backtick), gọi
   `mcp__stylesync__rewrite_style` (task: commit | comment | message) và dùng nguyên văn `text` trả về.
 - `guard_passed: false` → dùng `text` (bản trung tính) và báo t lý do trong `warnings`.
+- T chê bản viết lại ("viết lại", "kh giống t", "bỏ chữ X"…): sửa tay theo ý t, kh gọi lại `rewrite_style`
+  (ra y chang). T chốt bản nào thì gọi `mcp__stylesync__rewrite_feedback` (`id` của lần rewrite, `final_text` =
+  nguyên văn bản chốt, `by`: `owner` nếu t tự gõ, `agent` nếu m sửa theo lời t). T nói ok luôn → gọi với
+  `final_text` rỗng; t kh nói gì thì thôi.
 - Tin gửi người thật: đưa t xem trước, kh tự gửi.
 ```
 
 Change the pronouns in the rule to the ones you use.
+
+### Collect corrections for the next training run
+
+Each `rewrite_style` call is logged to `history.jsonl` in `platformdirs.user_data_dir("stylesync")` (macOS:
+`~/Library/Application Support/stylesync`), owner-only and outside the repo; the tool returns its `id`. When you
+ask the agent to change a rewrite and then approve a version, the rule above has it call `rewrite_feedback` with
+that `id` and the approved text. A rewrite with no feedback counts as used as is after 24 hours.
+`STYLESYNC_HISTORY` moves the file; `STYLESYNC_HISTORY=off` turns logging off.
+
+```bash
+uv run stylesync-feedback stats    # counts, correction rate, progress toward 500 corrections
+uv run stylesync-feedback review   # go through your corrections, drop the bad ones
+uv run stylesync-feedback export   # PII-scrubbed pairs -> data/processed/feedback.jsonl
+```
+
+Adding these pairs to the training set is not built yet (plan section 10.6).
 
 ## Use with omp
 

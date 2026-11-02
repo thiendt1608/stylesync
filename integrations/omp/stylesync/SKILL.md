@@ -21,6 +21,10 @@ Chạy hoàn toàn trên máy, kh gửi text ra ngoài.
 4. Ghi ra git/gh mà giữ đúng xuống dòng: `git commit -F <file>` hoặc heredoc `-F -`,
    `gh pr comment --body-file <file>`; kh nhét nhiều đoạn vào `-m "..."`.
 5. Tin gửi người thật (chat, email, DM): đưa owner xem trước, kh tự gửi.
+6. Giữ `id` tool trả về. Owner chê bản viết lại thì sửa tay theo ý owner (gọi lại `rewrite_style` ra y chang vì
+   decode greedy). Owner chốt bản nào thì gọi `mcp__stylesync_rewrite_feedback` với `id`, `final_text` = nguyên văn
+   bản chốt, `by` = `owner` (owner tự gõ) hoặc `agent` (sửa theo lời owner). Owner nói ok luôn → `final_text` rỗng.
+   Bản này là data để train tiếp, kh được tự bịa bản chốt.
 
 ## Lỗi thường gặp
 

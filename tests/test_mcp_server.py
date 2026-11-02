@@ -80,6 +80,7 @@ def test_rewrite_style_sends_masked_text_and_restores_backticks(monkeypatch):
     monkeypatch.setattr(mcp_server, "_generate", fake)
     res = mcp_server.rewrite_style("fix(auth): Sửa lỗi null trong `get_user`.\n\nRefs: #12", "commit")
     assert seen == ["Sửa lỗi null trong <CODE1>."]
+    assert res.pop("id")
     assert res == {"text": "fix(auth): fix null trong `get_user` rồi nha\n\nRefs: #12", "guard_passed": True, "warnings": []}
 
 
@@ -98,6 +99,7 @@ def test_rewrite_style_falls_back_when_backend_is_down(monkeypatch):
 
     monkeypatch.setattr(mcp_server, "_generate", down)
     res = mcp_server.rewrite_style("Đã sửa lỗi rồi.", "message")
+    assert res.pop("id")
     assert res == {"text": "Đã sửa lỗi rồi.", "guard_passed": False,
                    "warnings": ["local model unavailable: model file missing: x.gguf"]}
 
@@ -133,7 +135,8 @@ def test_tools_over_an_mcp_client(monkeypatch):
             return names, json.loads(res.content[0].text)
 
     names, res = asyncio.run(run())
-    assert {"rewrite_style", "health"} <= names
+    assert {"rewrite_style", "rewrite_feedback", "health"} <= names
+    assert res.pop("id")
     assert res == {"text": "fix: sửa null trong `get_user` r nha", "guard_passed": True, "warnings": []}
 
 
@@ -159,12 +162,13 @@ def test_rewrite_style_sends_one_paragraph_at_a_time(monkeypatch):
 def test_rewrite_style_leaves_empty_and_non_vietnamese_drafts(monkeypatch):
     monkeypatch.setattr(mcp_server, "_generate", lambda text: pytest.fail("the model must not be called"))
     assert mcp_server.rewrite_style("  ", "message") == {
-        "text": "  ", "guard_passed": False, "warnings": ["empty draft: nothing to rewrite"]}
+        "text": "  ", "guard_passed": False, "warnings": ["empty draft: nothing to rewrite"], "id": None}
     assert mcp_server.rewrite_style("fix(ci): ", "commit")["warnings"] == ["empty draft: nothing to rewrite"]
-    assert mcp_server.rewrite_style("`make test`", "comment") == {"text": "`make test`", "guard_passed": True, "warnings": []}
+    assert mcp_server.rewrite_style("`make test`", "comment") == {"text": "`make test`", "guard_passed": True, "warnings": [],
+                                                                   "id": None}
     en = "Please review the pull request when you have time."
     assert mcp_server.rewrite_style(en, "comment") == {
-        "text": en, "guard_passed": False, "warnings": ["draft is not Vietnamese: left unchanged"]}
+        "text": en, "guard_passed": False, "warnings": ["draft is not Vietnamese: left unchanged"], "id": None}
 
 
 def test_rewrite_style_rejects_a_cut_off_rewrite(monkeypatch):
